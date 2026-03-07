@@ -1,5 +1,5 @@
-import { supabase } from '../lib/supabase';
-import { User, JWEvent, Congregation, Passenger, PaymentReceipt, SHReport, Expense } from '../types';
+import { supabase } from '@/lib/supabase';
+import { User, JWEvent, Congregation, Passenger, PaymentReceipt, SHReport, Expense } from '@/types';
 
 export const supabaseService = {
   // Users

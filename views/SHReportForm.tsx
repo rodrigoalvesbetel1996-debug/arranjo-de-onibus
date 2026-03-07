@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
-import { User, UserRole, JWEvent, SHReport } from '../types';
-import { generateSHPdf } from '../utils/pdfGenerator';
-import ConfirmModal from '../components/ConfirmModal';
+import { User, UserRole, JWEvent, SHReport } from '@/types';
+import { generateSHPdf } from '@/utils/pdfGenerator';
+import ConfirmModal from '@/components/ConfirmModal';
 
 interface SHReportFormProps {
   user: User;

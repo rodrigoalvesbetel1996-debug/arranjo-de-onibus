@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { SHReport, Congregation, Passenger } from '../types';
+import { SHReport, Congregation, Passenger } from '@/types';
 
 export const generatePassengerListPdf = (congregation: Congregation, passengers: Passenger[], eventDate?: string, dayName?: string) => {
   const doc = new jsPDF('p', 'mm', 'a4');

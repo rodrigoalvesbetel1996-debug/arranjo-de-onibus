@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { UserRole, User } from '../types';
+import { UserRole, User } from '@/types';
 
 interface LayoutProps {
   user: User;

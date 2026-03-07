@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { JWEvent, EventType } from '../types';
+import { JWEvent, EventType } from '@/types';
 
 interface AdminEventsProps {
   events: JWEvent[];

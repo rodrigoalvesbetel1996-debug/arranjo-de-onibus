@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
-import { User, Passenger, JWEvent, PaymentReceipt, ExcessTreatment } from '../types';
-import ConfirmModal from '../components/ConfirmModal';
+import { User, Passenger, JWEvent, PaymentReceipt, ExcessTreatment } from '@/types';
+import ConfirmModal from '@/components/ConfirmModal';
 
 interface FinancialManagementProps {
   user: User;
@@ -11,6 +11,14 @@ interface FinancialManagementProps {
   onAddPayment: (payment: Partial<PaymentReceipt>) => void;
   onDeletePayment: (id: string) => void;
 }
+
+type PayerSummary = { 
+  totalDue: number; 
+  totalPaid: number; 
+  appliedTotal: number; 
+  tickets: number; 
+  receipts: PaymentReceipt[]; 
+};
 
 const FinancialManagement: React.FC<FinancialManagementProps> = ({ user, passengers, events, payments, onAddPayment, onDeletePayment }) => {
   const [showModal, setShowModal] = useState(false);
@@ -41,7 +49,7 @@ const FinancialManagement: React.FC<FinancialManagementProps> = ({ user, passeng
     e.preventDefault();
     if (!activeEvent || !congregationAmount) return;
 
-    const files = congregationFiles ? Array.from(congregationFiles) : [];
+    const files = congregationFiles ? Array.from(congregationFiles) as File[] : [];
     const urls = files.map(f => URL.createObjectURL(f));
 
     onAddPayment({
@@ -72,8 +80,8 @@ const FinancialManagement: React.FC<FinancialManagementProps> = ({ user, passeng
     payments.filter(p => p.congregationId === user.congregationId && p.eventId === activeEvent?.id),
   [payments, user.congregationId, activeEvent]);
 
-  const payerSummaries = useMemo(() => {
-    const summaries: Record<string, { totalDue: number, totalPaid: number, appliedTotal: number, tickets: number, receipts: PaymentReceipt[] }> = {};
+  const payerSummaries = useMemo<Record<string, PayerSummary>>(() => {
+    const summaries: Record<string, PayerSummary> = {};
 
     myPassengers.forEach(p => {
       if (!summaries[p.payerName]) {
@@ -203,25 +211,25 @@ const FinancialManagement: React.FC<FinancialManagementProps> = ({ user, passeng
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <GlobalFinanceCard 
           title="Total Devido (Assentos)" 
-          value={Object.values(payerSummaries).reduce((acc, s) => acc + s.totalDue, 0)} 
+          value={(Object.values(payerSummaries) as PayerSummary[]).reduce((acc: number, s: PayerSummary) => acc + s.totalDue, 0)} 
           subText="Calculado por poltronas" 
           color="slate" 
         />
         <GlobalFinanceCard 
           title="Total Arrecadado (Aplicado)" 
-          value={Object.values(payerSummaries).reduce((acc, s) => acc + s.appliedTotal, 0)} 
+          value={(Object.values(payerSummaries) as PayerSummary[]).reduce((acc: number, s: PayerSummary) => acc + s.appliedTotal, 0)} 
           subText="Montante que quita dívidas" 
           color="emerald" 
         />
         <GlobalFinanceCard 
           title="Total Enviado" 
-          value={congregationPayments.reduce((acc, p) => acc + p.amount, 0)} 
+          value={congregationPayments.reduce((acc: number, p: PaymentReceipt) => acc + p.amount, 0)} 
           subText="Repassado à Organização" 
           color="blue" 
         />
         <GlobalFinanceCard 
           title="Total a Receber" 
-          value={Object.values(payerSummaries).reduce((acc, s) => acc + Math.max(0, s.totalDue - s.appliedTotal), 0)} 
+          value={(Object.values(payerSummaries) as PayerSummary[]).reduce((acc: number, s: PayerSummary) => acc + Math.max(0, s.totalDue - s.appliedTotal), 0)} 
           subText="Pendência global" 
           color="red" 
         />
@@ -302,7 +310,7 @@ const FinancialManagement: React.FC<FinancialManagementProps> = ({ user, passeng
                   </td>
                 </tr>
               ) : (
-                Object.entries(payerSummaries).map(([name, summary]) => {
+                (Object.entries(payerSummaries) as [string, PayerSummary][]).map(([name, summary]) => {
                   const balance = summary.totalDue - summary.appliedTotal;
                   const isQuitado = balance <= 0.01;
                   return (

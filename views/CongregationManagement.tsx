@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
-import { Congregation, User, UserRole, Passenger, PaymentReceipt, SHReport, JWEvent } from '../types';
-import { generateSHPdf, generatePassengerListPdf, generateConsolidatedPassengerListPdf } from '../utils/pdfGenerator';
-import ConfirmModal from '../components/ConfirmModal';
+import { Congregation, User, UserRole, Passenger, PaymentReceipt, SHReport, JWEvent } from '@/types';
+import { generateSHPdf, generatePassengerListPdf, generateConsolidatedPassengerListPdf } from '@/utils/pdfGenerator';
+import ConfirmModal from '@/components/ConfirmModal';
 
 interface CongregationManagementProps {
   user: User;

@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { User, UserRole, JWEvent, Passenger, PaymentReceipt, Congregation, Expense } from '../types';
+import { User, UserRole, JWEvent, Passenger, PaymentReceipt, Congregation, Expense } from '@/types';
 
 interface DashboardProps {
   user: User;

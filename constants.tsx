@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { UserRole, EventType, User, JWEvent, Congregation } from './types';
+import { UserRole, EventType, User, JWEvent, Congregation } from '@/types';
 
 export const INITIAL_ADMIN: User = {
   id: 'admin-001',

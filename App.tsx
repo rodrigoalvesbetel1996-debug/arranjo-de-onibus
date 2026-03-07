@@ -1,18 +1,18 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, UserRole, JWEvent, Passenger, Congregation, PaymentReceipt, SHReport, Expense } from './types';
-import { storage } from './services/storageService';
-import { supabaseService } from './services/supabaseService';
-import { supabase, isSupabaseConfigured } from './lib/supabase';
-import Login from './views/Login';
-import Layout from './components/Layout';
-import Dashboard from './views/Dashboard';
-import PassengerManagement from './views/PassengerManagement';
-import FinancialManagement from './views/FinancialManagement';
-import AdminEvents from './views/AdminEvents';
-import SHReportForm from './views/SHReportForm';
-import UserManagement from './views/UserManagement';
-import CongregationManagement from './views/CongregationManagement';
+import { User, UserRole, JWEvent, Passenger, Congregation, PaymentReceipt, SHReport, Expense } from '@/types';
+import { storage } from '@/services/storageService';
+import { supabaseService } from '@/services/supabaseService';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import Login from '@/views/Login';
+import Layout from '@/components/Layout';
+import Dashboard from '@/views/Dashboard';
+import PassengerManagement from '@/views/PassengerManagement';
+import FinancialManagement from '@/views/FinancialManagement';
+import AdminEvents from '@/views/AdminEvents';
+import SHReportForm from '@/views/SHReportForm';
+import UserManagement from '@/views/UserManagement';
+import CongregationManagement from '@/views/CongregationManagement';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(storage.getSession());

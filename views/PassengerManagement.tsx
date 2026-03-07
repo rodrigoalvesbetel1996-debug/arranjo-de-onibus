@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
-import { Passenger, User, JWEvent, AccommodationType, EventType } from '../types';
+import { Passenger, User, JWEvent, AccommodationType, EventType } from '@/types';
 import { jsPDF } from 'jspdf';
-import ConfirmModal from '../components/ConfirmModal';
+import ConfirmModal from '@/components/ConfirmModal';
 
 interface PassengerManagementProps {
   user: User;

@@ -1,0 +1,7 @@
+{
+  "name": "Arranjo de Onibus",
+  "description": "A comprehensive system for managing congregation transport, passenger data, and financial tracking for large-scale JW events.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

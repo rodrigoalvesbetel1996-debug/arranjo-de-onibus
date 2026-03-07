@@ -74,8 +74,12 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, users, congregations
       // For prototype, any code works or we just proceed
       setAuthStep('ACCESS_CODE');
     } else if (authStep === 'ACCESS_CODE') {
-      // Validate Access Code
-      if (formData.accessCode === selectedCongregation?.accessCode) {
+      // Validate Access Code against the latest data from props
+      const latestCong = congregations.find(c => c.id === selectedCongregation?.id);
+      const inputCode = formData.accessCode.trim();
+      const targetCode = (latestCong?.accessCode || '').trim();
+
+      if (inputCode === targetCode && targetCode !== '') {
         // Create User and Login
         const newUser: User = {
           id: `user-${Date.now()}`,
@@ -83,7 +87,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, users, congregations
           password: formData.password,
           name: formData.name,
           role: UserRole.CONGREGATION,
-          congregationId: selectedCongregation.id
+          congregationId: latestCong?.id || selectedCongregation?.id || ''
         };
         onRegister(newUser);
       } else {

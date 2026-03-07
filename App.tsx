@@ -295,6 +295,7 @@ const App: React.FC = () => {
     const cong: Congregation = {
       ...newCong,
       id: newCong.id || `cong-${Date.now()}`,
+      accessCode: Math.floor(100000 + Math.random() * 900000).toString(),
       lastUpdated: new Date().toISOString()
     } as Congregation;
     setCongregations(prev => [...prev, cong]);

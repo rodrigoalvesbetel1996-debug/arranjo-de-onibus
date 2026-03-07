@@ -47,18 +47,32 @@ const App: React.FC = () => {
             supabaseService.getExpenses()
           ]);
           
+          const loadedCongs = c.length > 0 ? c : storage.getCongregations();
+          
+          // Ensure all congregations have an access code if missing
+          const fixedCongs = loadedCongs.map(cong => ({
+            ...cong,
+            accessCode: cong.accessCode || Math.floor(100000 + Math.random() * 900000).toString()
+          }));
+          
           setUsers(u.length > 0 ? u : storage.getUsers());
           setEvents(e.length > 0 ? e : storage.getEvents());
-          setCongregations(c.length > 0 ? c : storage.getCongregations());
+          setCongregations(fixedCongs);
           setPassengers(p);
           setPayments(pay);
           setReports(r);
           setExpenses(exp);
         } else {
           // Fallback to LocalStorage
+          const loadedCongs = storage.getCongregations();
+          const fixedCongs = loadedCongs.map(cong => ({
+            ...cong,
+            accessCode: cong.accessCode || Math.floor(100000 + Math.random() * 900000).toString()
+          }));
+
           setUsers(storage.getUsers());
           setEvents(storage.getEvents());
-          setCongregations(storage.getCongregations());
+          setCongregations(fixedCongs);
           setPassengers(storage.getPassengers());
           setPayments(storage.getPayments());
           setReports(storage.getReports());
@@ -67,9 +81,15 @@ const App: React.FC = () => {
       } catch (error) {
         console.warn('Supabase not reachable or configured incorrectly. Falling back to LocalStorage.', error);
         // Fallback on error
+        const loadedCongs = storage.getCongregations();
+        const fixedCongs = loadedCongs.map(cong => ({
+          ...cong,
+          accessCode: cong.accessCode || Math.floor(100000 + Math.random() * 900000).toString()
+        }));
+
         setUsers(storage.getUsers());
         setEvents(storage.getEvents());
-        setCongregations(storage.getCongregations());
+        setCongregations(fixedCongs);
         setPassengers(storage.getPassengers());
         setPayments(storage.getPayments());
         setReports(storage.getReports());

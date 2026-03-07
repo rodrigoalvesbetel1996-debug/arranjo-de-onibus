@@ -79,7 +79,12 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, users, congregations
       const inputCode = formData.accessCode.trim();
       const targetCode = (latestCong?.accessCode || '').trim();
 
-      if (inputCode === targetCode && targetCode !== '') {
+      if (targetCode === '') {
+        setModalError('Esta congregação ainda não possui um código de acesso configurado. Contate o administrador.');
+        return;
+      }
+
+      if (inputCode === targetCode) {
         // Create User and Login
         const newUser: User = {
           id: `user-${Date.now()}`,
@@ -91,7 +96,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, users, congregations
         };
         onRegister(newUser);
       } else {
-        setModalError('Código de acesso inválido.');
+        setModalError(`Código de acesso inválido para ${latestCong?.name || 'esta congregação'}.`);
       }
     }
   };

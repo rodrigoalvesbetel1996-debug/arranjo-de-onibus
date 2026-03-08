@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { User, UserRole, Congregation } from '@/types';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { supabaseService } from '@/services/supabaseService';
 
 interface LoginProps {
@@ -55,6 +55,29 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, users, congregations
     setIsLoading(true);
 
     try {
+      if (!isSupabaseConfigured) {
+        // Mock login for when Supabase is not configured
+        setTimeout(() => {
+          if (authStep === 'LOGIN_OR_REGISTER') {
+            if (isRegistering) {
+              setAuthStep('CONFIRM_EMAIL');
+            } else {
+              setAuthStep('ACCESS_CODE');
+            }
+          } else if (authStep === 'ACCESS_CODE') {
+            onLogin({
+              id: 'mock-user-id',
+              email: formData.email,
+              name: formData.name || 'Usuário Teste',
+              role: UserRole.CONGREGATION,
+              congregationId: selectedCongregation?.id
+            });
+          }
+          setIsLoading(false);
+        }, 1000);
+        return;
+      }
+
       if (authStep === 'LOGIN_OR_REGISTER') {
         if (isRegistering) {
           // 1. Supabase Auth Sign Up
@@ -90,7 +113,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, users, congregations
             password: formData.password
           });
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Tempo de conexão esgotado. Tente novamente.')), 8000)
+            setTimeout(() => reject(new Error('Tempo de conexão esgotado. O servidor pode estar "acordando" ou as credenciais estão incorretas. Tente novamente em alguns instantes.')), 45000)
           );
 
           const { data, error: signInError } = await Promise.race([loginPromise, timeoutPromise]) as any;
@@ -171,6 +194,20 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, users, congregations
     setIsLoading(true);
 
     try {
+      if (!isSupabaseConfigured) {
+        // Mock login for when Supabase is not configured
+        setTimeout(() => {
+          onLogin({
+            id: 'mock-admin-id',
+            email: email,
+            name: adminName || 'Admin Teste',
+            role: UserRole.ADMIN
+          });
+          setIsLoading(false);
+        }, 1000);
+        return;
+      }
+
       if (isAdminRegistering) {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
@@ -199,7 +236,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, users, congregations
         // Strict timeout for login to prevent infinite loading
         const loginPromise = supabase.auth.signInWithPassword({ email, password });
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Tempo de conexão esgotado. Tente novamente.')), 8000)
+          setTimeout(() => reject(new Error('Tempo de conexão esgotado. O servidor pode estar "acordando" ou as credenciais estão incorretas. Tente novamente em alguns instantes.')), 45000)
         );
         
         const { data, error: signInError } = await Promise.race([loginPromise, timeoutPromise]) as any;

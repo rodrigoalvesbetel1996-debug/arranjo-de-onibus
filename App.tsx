@@ -15,6 +15,7 @@ import UserManagement from '@/views/UserManagement';
 import CongregationManagement from '@/views/CongregationManagement';
 
 const App: React.FC = () => {
+  console.log('App is rendering...');
   const [user, setUser] = useState<User | null>(null);
   const [currentView, setCurrentView] = useState('dashboard');
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -36,16 +37,35 @@ const App: React.FC = () => {
     let isMounted = true;
 
     const checkSession = async () => {
+      if (!isSupabaseConfigured) {
+        if (isMounted) {
+          setUser(null);
+          setIsLoading(false);
+        }
+        return;
+      }
+
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Session timeout')), 15000)
+        );
+        
+        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]) as any;
+        
         if (session?.user) {
-          const profile = await supabaseService.getCurrentProfile(session.user.id);
+          const profilePromise = supabaseService.getCurrentProfile(session.user.id);
+          const profile = await Promise.race([profilePromise, timeoutPromise]) as any;
           if (isMounted) setUser(profile);
         } else {
           if (isMounted) setUser(null);
         }
-      } catch (error) {
-        console.error('Session check error:', error);
+      } catch (error: any) {
+        if (error.message === 'Session timeout') {
+          console.warn('Supabase session check timed out. Proceeding to login screen.');
+        } else {
+          console.error('Session check error:', error);
+        }
         if (isMounted) setUser(null);
       } finally {
         if (isMounted) setIsLoading(false);

@@ -15,8 +15,7 @@ import UserManagement from '@/views/UserManagement';
 import CongregationManagement from '@/views/CongregationManagement';
 
 const App: React.FC = () => {
-  console.log('App is rendering...');
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(storage.getSession());
   const [currentView, setCurrentView] = useState('dashboard');
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('jw_theme');
@@ -32,128 +31,56 @@ const App: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Auth Session Management
-  useEffect(() => {
-    let isMounted = true;
-
-    const checkSession = async () => {
-      if (!isSupabaseConfigured) {
-        if (isMounted) {
-          setUser(null);
-          setIsLoading(false);
-        }
-        return;
-      }
-
-      try {
-        const sessionPromise = supabase.auth.getSession();
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Session timeout')), 15000)
-        );
-        
-        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]) as any;
-        
-        if (session?.user) {
-          const profilePromise = supabaseService.getCurrentProfile(session.user.id);
-          const profile = await Promise.race([profilePromise, timeoutPromise]) as any;
-          if (isMounted) setUser(profile);
-        } else {
-          if (isMounted) setUser(null);
-        }
-      } catch (error: any) {
-        if (error.message === 'Session timeout') {
-          console.warn('Supabase session check timed out. Proceeding to login screen.');
-        } else {
-          console.error('Session check error:', error);
-        }
-        if (isMounted) setUser(null);
-      } finally {
-        if (isMounted) setIsLoading(false);
-      }
-    };
-
-    checkSession();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        try {
-          const profile = await supabaseService.getCurrentProfile(session.user.id);
-          if (isMounted) setUser(profile);
-        } catch (error) {
-          console.error('Auth state change error:', error);
-        }
-      } else {
-        if (isMounted) setUser(null);
-      }
-      if (isMounted) setIsLoading(false);
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
-  }, []);
-
   // Initial Data Loading
   useEffect(() => {
-    let isMounted = true;
-    
     const loadData = async () => {
-      // We start by showing the UI immediately if we have local data
-      // or if we are not logged in.
-      if (!user) {
-        return; // Let the auth effect handle the loading state
-      }
-
+      setIsLoading(true);
       try {
         if (isSupabaseConfigured) {
-          const fetchWithFallback = async (fetcher: () => Promise<any>, fallback: any) => {
-            try {
-              const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Timeout')), 3000)
-              );
-              return await Promise.race([fetcher(), timeoutPromise]);
-            } catch (e) {
-              return fallback;
-            }
-          };
-
           const [u, e, c, p, pay, r, exp] = await Promise.all([
-            fetchWithFallback(() => supabaseService.getUsers(), storage.getUsers()),
-            fetchWithFallback(() => supabaseService.getEvents(), storage.getEvents()),
-            fetchWithFallback(() => supabaseService.getCongregations(), storage.getCongregations()),
-            fetchWithFallback(() => supabaseService.getPassengers(), storage.getPassengers()),
-            fetchWithFallback(() => supabaseService.getPayments(), storage.getPayments()),
-            fetchWithFallback(() => supabaseService.getReports(), storage.getReports()),
-            fetchWithFallback(() => supabaseService.getExpenses(), storage.getExpenses())
+            supabaseService.getUsers(),
+            supabaseService.getEvents(),
+            supabaseService.getCongregations(),
+            supabaseService.getPassengers(),
+            supabaseService.getPayments(),
+            supabaseService.getReports(),
+            supabaseService.getExpenses()
           ]);
           
-          if (!isMounted) return;
-
-          if (u) setUsers(u);
-          if (e) setEvents(e);
-          if (c) {
-            const fixedCongs = c.map((cong: Congregation) => ({
-              ...cong,
-              accessCode: cong.accessCode || Math.floor(100000 + Math.random() * 900000).toString()
-            }));
-            setCongregations(fixedCongs);
-          }
-          if (p) setPassengers(p);
-          if (pay) setPayments(pay);
-          if (r) setReports(r);
-          if (exp) setExpenses(exp);
+          setUsers(u.length > 0 ? u : storage.getUsers());
+          setEvents(e.length > 0 ? e : storage.getEvents());
+          setCongregations(c.length > 0 ? c : storage.getCongregations());
+          setPassengers(p);
+          setPayments(pay);
+          setReports(r);
+          setExpenses(exp);
+        } else {
+          // Fallback to LocalStorage
+          setUsers(storage.getUsers());
+          setEvents(storage.getEvents());
+          setCongregations(storage.getCongregations());
+          setPassengers(storage.getPassengers());
+          setPayments(storage.getPayments());
+          setReports(storage.getReports());
+          setExpenses(storage.getExpenses());
         }
       } catch (error) {
-        console.error('Background sync error:', error);
+        console.warn('Supabase not reachable or configured incorrectly. Falling back to LocalStorage.', error);
+        // Fallback on error
+        setUsers(storage.getUsers());
+        setEvents(storage.getEvents());
+        setCongregations(storage.getCongregations());
+        setPassengers(storage.getPassengers());
+        setPayments(storage.getPayments());
+        setReports(storage.getReports());
+        setExpenses(storage.getExpenses());
       } finally {
-        if (isMounted) setIsLoading(false);
+        setIsLoading(false);
       }
     };
 
     loadData();
-    return () => { isMounted = false; };
-  }, [user?.id]);
+  }, []);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -224,14 +151,13 @@ const App: React.FC = () => {
 
   const handleLogin = (u: User) => {
     setUser(u);
+    storage.setSession(u);
     setCurrentView('dashboard');
   };
 
-  const handleLogout = async () => {
-    if (isSupabaseConfigured) {
-      await supabase.auth.signOut();
-    }
+  const handleLogout = () => {
     setUser(null);
+    storage.setSession(null);
   };
 
   const addPassengerGroup = (group: Partial<Passenger>[], existingGroupId?: string) => {

@@ -2,45 +2,14 @@ import { supabase } from '@/lib/supabase';
 import { User, JWEvent, Congregation, Passenger, PaymentReceipt, SHReport, Expense } from '@/types';
 
 export const supabaseService = {
-  // Auth & Profiles
-  getCurrentProfile: async (userId: string): Promise<User | null> => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-    if (error) return null;
-    return data as User;
-  },
-
-  validateAccessCode: async (code: string): Promise<string | null> => {
-    const { data, error } = await supabase
-      .from('congregation_access_codes')
-      .select('congregationId')
-      .eq('code', code.toUpperCase())
-      .eq('isActive', true)
-      .single();
-    
-    if (error || !data) return null;
-    return data.congregationId;
-  },
-
-  linkUserToCongregation: async (userId: string, congregationId: string) => {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ congregationId: congregationId })
-      .eq('id', userId);
-    if (error) throw error;
-  },
-
-  // Users (Profiles)
+  // Users
   getUsers: async (): Promise<User[]> => {
-    const { data, error } = await supabase.from('profiles').select('*');
+    const { data, error } = await supabase.from('users').select('*');
     if (error) throw error;
     return data as User[];
   },
   saveUser: async (user: User) => {
-    const { error } = await supabase.from('profiles').upsert(user);
+    const { error } = await supabase.from('users').upsert(user);
     if (error) throw error;
   },
 
@@ -61,45 +30,13 @@ export const supabaseService = {
 
   // Congregations
   getCongregations: async (): Promise<Congregation[]> => {
-    try {
-      const { data, error } = await supabase.from('congregations').select('*, congregation_access_codes(code)');
-      
-      if (error) {
-        console.warn('Error fetching congregations with access codes, trying simple fetch:', error);
-        const { data: simpleData, error: simpleError } = await supabase.from('congregations').select('*');
-        if (simpleError) throw simpleError;
-        return simpleData as Congregation[];
-      }
-      
-      // Map access code from the joined table if needed
-      return data.map(c => ({
-        ...c,
-        accessCode: c.congregation_access_codes?.[0]?.code || ''
-      })) as Congregation[];
-    } catch (err) {
-      console.error('Failed to get congregations:', err);
-      throw err;
-    }
+    const { data, error } = await supabase.from('congregations').select('*');
+    if (error) throw error;
+    return data as Congregation[];
   },
   saveCongregation: async (cong: Congregation) => {
-    // 1. Sanitize data: remove properties that are not columns in the 'congregations' table
-    // We extract accessCode (to save in other table) and congregation_access_codes/stats (which come from joins/calculations)
-    const { accessCode, congregation_access_codes, stats, ...congData } = cong as any;
-    
-    const { error: congError } = await supabase.from('congregations').upsert(congData);
-    if (congError) throw congError;
-
-    // 2. Save to congregation_access_codes table
-    if (accessCode) {
-      const { error: codeError } = await supabase
-        .from('congregation_access_codes')
-        .upsert({
-          congregationId: cong.id,
-          code: accessCode.toUpperCase(),
-          isActive: true
-        }, { onConflict: 'congregationId' });
-      if (codeError) console.warn('Error saving access code:', codeError);
-    }
+    const { error } = await supabase.from('congregations').upsert(cong);
+    if (error) throw error;
   },
 
   // Passengers

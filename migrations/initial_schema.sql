@@ -1,20 +1,19 @@
 -- Initial Schema for JW Event Transport Manager
--- This script sets up the database structure compatible with Supabase Auth and the App's camelCase models.
+-- WARNING: This script will drop existing tables to recreate them with the correct camelCase schema.
 
--- 1. Extensions and Cleanup
+-- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- Drop existing tables to avoid conflicts with old snake_case schema
 DROP TABLE IF EXISTS "expenses" CASCADE;
 DROP TABLE IF EXISTS "sh_reports" CASCADE;
 DROP TABLE IF EXISTS "payments" CASCADE;
 DROP TABLE IF EXISTS "passengers" CASCADE;
-DROP TABLE IF EXISTS "profiles" CASCADE;
-DROP TABLE IF EXISTS "congregation_access_codes" CASCADE;
-DROP TABLE IF EXISTS "users" CASCADE; -- Old manual users table
+DROP TABLE IF EXISTS "users" CASCADE;
 DROP TABLE IF EXISTS "events" CASCADE;
 DROP TABLE IF EXISTS "congregations" CASCADE;
 
--- 2. Congregations Table
+-- Congregations Table
 CREATE TABLE "congregations" (
     "id" TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     "name" TEXT NOT NULL,
@@ -26,19 +25,10 @@ CREATE TABLE "congregations" (
     "phone" TEXT,
     "lastUpdated" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     "isPaidConfirmed" BOOLEAN DEFAULT FALSE,
-    "accessCode" TEXT -- Kept for fast reading compatibility
+    "accessCode" TEXT
 );
 
--- 3. Access Codes Table (Extra Security)
-CREATE TABLE "congregation_access_codes" (
-    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    "congregationId" TEXT UNIQUE REFERENCES "congregations"("id") ON DELETE CASCADE,
-    "code" TEXT UNIQUE NOT NULL,
-    "isActive" BOOLEAN DEFAULT TRUE,
-    "createdAt" TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 4. Events Table
+-- Events Table
 CREATE TABLE "events" (
     "id" TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     "name" TEXT NOT NULL,
@@ -54,17 +44,17 @@ CREATE TABLE "events" (
     "fileName" TEXT
 );
 
--- 5. Profiles Table (Linked to Supabase Auth)
-CREATE TABLE "profiles" (
-    "id" UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    "email" TEXT NOT NULL,
-    "name" TEXT,
-    "role" TEXT CHECK ("role" IN ('ADMIN', 'CONGREGATION')) DEFAULT 'CONGREGATION',
+-- Users Table
+CREATE TABLE "users" (
+    "id" TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+    "email" TEXT UNIQUE NOT NULL,
+    "password" TEXT NOT NULL,
+    "role" TEXT NOT NULL CHECK (role IN ('ADMIN', 'CONGREGATION')),
     "congregationId" TEXT REFERENCES "congregations"("id"),
-    "createdAt" TIMESTAMPTZ DEFAULT NOW()
+    "name" TEXT NOT NULL
 );
 
--- 6. Passengers Table
+-- Passengers Table
 CREATE TABLE "passengers" (
     "id" TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     "groupId" TEXT NOT NULL,
@@ -85,7 +75,7 @@ CREATE TABLE "passengers" (
     "selectedDays" JSONB DEFAULT '[]'::jsonb
 );
 
--- 7. Payments Table
+-- Payments Table
 CREATE TABLE "payments" (
     "id" TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     "congregationId" TEXT NOT NULL REFERENCES "congregations"("id"),
@@ -104,7 +94,7 @@ CREATE TABLE "payments" (
     "observation" TEXT
 );
 
--- 8. SH Reports Table
+-- SH Reports Table
 CREATE TABLE "sh_reports" (
     "id" TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     "congregationId" TEXT NOT NULL REFERENCES "congregations"("id"),
@@ -113,7 +103,7 @@ CREATE TABLE "sh_reports" (
     "answers" JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 
--- 9. Expenses Table
+-- Expenses Table
 CREATE TABLE "expenses" (
     "id" TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     "eventId" TEXT NOT NULL REFERENCES "events"("id"),
@@ -122,28 +112,28 @@ CREATE TABLE "expenses" (
     "date" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 10. Security (RLS)
+-- Enable RLS on all tables
 ALTER TABLE "congregations" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "congregation_access_codes" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "events" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "profiles" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "users" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "passengers" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "payments" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "sh_reports" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "expenses" ENABLE ROW LEVEL SECURITY;
 
--- Public Access Policies (For development/testing)
-CREATE POLICY "Public Access" ON "congregations" FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public Access" ON "congregation_access_codes" FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public Access" ON "events" FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public Access" ON "profiles" FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public Access" ON "passengers" FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public Access" ON "payments" FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public Access" ON "sh_reports" FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public Access" ON "expenses" FOR ALL USING (true) WITH CHECK (true);
+-- Create policies to allow all operations for now (Public Access)
+-- Note: In a production app, you would restrict this based on auth.uid()
+CREATE POLICY "Allow all on congregations" ON "congregations" FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all on events" ON "events" FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all on users" ON "users" FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all on passengers" ON "passengers" FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all on payments" ON "payments" FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all on sh_reports" ON "sh_reports" FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all on expenses" ON "expenses" FOR ALL USING (true) WITH CHECK (true);
 
--- Performance Indexes
-CREATE INDEX idx_pass_cong ON "passengers"("congregationId");
-CREATE INDEX idx_pass_event ON "passengers"("eventId");
-CREATE INDEX idx_pay_cong ON "payments"("congregationId");
-CREATE INDEX idx_prof_cong ON "profiles"("congregationId");
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_passengers_congregation ON "passengers"("congregationId");
+CREATE INDEX IF NOT EXISTS idx_passengers_event ON "passengers"("eventId");
+CREATE INDEX IF NOT EXISTS idx_payments_congregation ON "payments"("congregationId");
+CREATE INDEX IF NOT EXISTS idx_payments_event ON "payments"("eventId");
+CREATE INDEX IF NOT EXISTS idx_users_congregation ON "users"("congregationId");

@@ -33,16 +33,45 @@ const App: React.FC = () => {
 
   // Auth Session Management
   useEffect(() => {
+    let isMounted = true;
+
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const profile = await supabaseService.getCurrentProfile(session.user.id);
+          if (isMounted) setUser(profile);
+        } else {
+          if (isMounted) setUser(null);
+        }
+      } catch (error) {
+        console.error('Session check error:', error);
+        if (isMounted) setUser(null);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    checkSession();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
-        const profile = await supabaseService.getCurrentProfile(session.user.id);
-        setUser(profile);
+        try {
+          const profile = await supabaseService.getCurrentProfile(session.user.id);
+          if (isMounted) setUser(profile);
+        } catch (error) {
+          console.error('Auth state change error:', error);
+        }
       } else {
-        setUser(null);
+        if (isMounted) setUser(null);
       }
+      if (isMounted) setIsLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Initial Data Loading
@@ -53,7 +82,7 @@ const App: React.FC = () => {
       // We start by showing the UI immediately if we have local data
       // or if we are not logged in.
       if (!user) {
-        setIsLoading(false);
+        return; // Let the auth effect handle the loading state
       }
 
       try {

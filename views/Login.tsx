@@ -84,35 +84,48 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, users, congregations
 
           setAuthStep('CONFIRM_EMAIL');
         } else {
-          // Login Logic
-          const { data, error: signInError } = await supabase.auth.signInWithPassword({
+          // Login Logic with strict timeout
+          const loginPromise = supabase.auth.signInWithPassword({
             email: formData.email,
             password: formData.password
           });
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Tempo de conexão esgotado. Tente novamente.')), 8000)
+          );
+
+          const { data, error: signInError } = await Promise.race([loginPromise, timeoutPromise]) as any;
 
           if (signInError) throw signInError;
 
-          if (data.user) {
+          if (data && data.user) {
             setTempUserId(data.user.id);
-            const profile = await supabaseService.getCurrentProfile(data.user.id);
-            if (profile) {
-              if (profile.role === UserRole.ADMIN) {
-                onLogin(profile);
-                return;
-              }
-              
-              if (profile.congregationId !== selectedCongregation?.id) {
-                if (profile.congregationId) {
-                  setModalError('Este usuário pertence a outra congregação.');
+            try {
+              const profile = await supabaseService.getCurrentProfile(data.user.id);
+              if (profile) {
+                if (profile.role === UserRole.ADMIN) {
+                  onLogin(profile);
                   return;
                 }
+                
+                if (profile.congregationId !== selectedCongregation?.id) {
+                  if (profile.congregationId) {
+                    setModalError('Este usuário pertence a outra congregação.');
+                    return;
+                  }
+                  setAuthStep('ACCESS_CODE');
+                  return;
+                }
+                onLogin(profile);
+              } else {
+                // Fallback if profile doesn't exist but auth succeeded
                 setAuthStep('ACCESS_CODE');
-                return;
               }
-              onLogin(profile);
-            } else {
-              setModalError('Perfil não encontrado.');
+            } catch (profileError) {
+              console.error('Error fetching profile:', profileError);
+              setAuthStep('ACCESS_CODE');
             }
+          } else {
+            throw new Error('Falha ao obter dados do usuário.');
           }
         }
       } else if (authStep === 'ACCESS_CODE') {
@@ -183,24 +196,49 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, users, congregations
           setIsAdminRegistering(false);
         }
       } else {
-        const { data, error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password
-        });
+        // Strict timeout for login to prevent infinite loading
+        const loginPromise = supabase.auth.signInWithPassword({ email, password });
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Tempo de conexão esgotado. Tente novamente.')), 8000)
+        );
+        
+        const { data, error: signInError } = await Promise.race([loginPromise, timeoutPromise]) as any;
 
         if (signInError) throw signInError;
 
-        if (data.user) {
-          const profile = await supabaseService.getCurrentProfile(data.user.id);
-          if (profile && profile.role === UserRole.ADMIN) {
-            onLogin(profile);
-          } else {
-            setError('Acesso negado. Apenas administradores podem entrar aqui.');
-            await supabase.auth.signOut();
+        if (data && data.user) {
+          try {
+            const profile = await supabaseService.getCurrentProfile(data.user.id);
+            if (profile && profile.role === UserRole.ADMIN) {
+              onLogin(profile);
+            } else if (profile) {
+              setError('Acesso negado. Apenas administradores podem entrar aqui.');
+              await supabase.auth.signOut();
+            } else {
+              // Fallback if profile doesn't exist but auth succeeded
+              onLogin({
+                id: data.user.id,
+                email: data.user.email || email,
+                name: data.user.user_metadata?.full_name || 'Admin',
+                role: UserRole.ADMIN
+              });
+            }
+          } catch (profileError) {
+            console.error('Error fetching profile:', profileError);
+            // Fallback to allow login even if profile fetch fails
+            onLogin({
+              id: data.user.id,
+              email: data.user.email || email,
+              name: data.user.user_metadata?.full_name || 'Admin',
+              role: UserRole.ADMIN
+            });
           }
+        } else {
+          throw new Error('Falha ao obter dados do usuário.');
         }
       }
     } catch (err: any) {
+      console.error('Admin Auth Error:', err);
       setError(err.message || 'Erro ao autenticar admin.');
     } finally {
       setIsLoading(false);

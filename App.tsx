@@ -47,49 +47,71 @@ const App: React.FC = () => {
 
   // Initial Data Loading
   useEffect(() => {
+    let isMounted = true;
     const loadData = async () => {
-      if (!user && isSupabaseConfigured) {
-        // If not logged in and using supabase, we might still want to load congregations for the login screen
-        try {
-          const c = await supabaseService.getCongregations();
-          setCongregations(c.length > 0 ? c : storage.getCongregations());
-        } catch (e) {
-          setCongregations(storage.getCongregations());
+      // Safety timeout to prevent indefinite loading screen
+      const timeoutId = setTimeout(() => {
+        if (isMounted && isLoading) {
+          console.warn('Data loading timed out. Forcing loading state to false.');
+          setIsLoading(false);
         }
-        setIsLoading(false);
-        return;
-      }
+      }, 8000);
 
-      setIsLoading(true);
       try {
+        if (!user && isSupabaseConfigured) {
+          try {
+            const c = await supabaseService.getCongregations();
+            if (isMounted) setCongregations(c.length > 0 ? c : storage.getCongregations());
+          } catch (e) {
+            console.warn('Error loading congregations for login:', e);
+            if (isMounted) setCongregations(storage.getCongregations());
+          }
+          if (isMounted) setIsLoading(false);
+          clearTimeout(timeoutId);
+          return;
+        }
+
+        if (isMounted) setIsLoading(true);
+        
         if (isSupabaseConfigured) {
+          // Load data with individual error handling to prevent one failing table from blocking everything
+          const fetchWithFallback = async (fetcher: () => Promise<any>, fallback: any) => {
+            try {
+              return await fetcher();
+            } catch (e) {
+              console.warn('Fetch failed, using fallback:', e);
+              return fallback;
+            }
+          };
+
           const [u, e, c, p, pay, r, exp] = await Promise.all([
-            supabaseService.getUsers(),
-            supabaseService.getEvents(),
-            supabaseService.getCongregations(),
-            supabaseService.getPassengers(),
-            supabaseService.getPayments(),
-            supabaseService.getReports(),
-            supabaseService.getExpenses()
+            fetchWithFallback(() => supabaseService.getUsers(), storage.getUsers()),
+            fetchWithFallback(() => supabaseService.getEvents(), storage.getEvents()),
+            fetchWithFallback(() => supabaseService.getCongregations(), storage.getCongregations()),
+            fetchWithFallback(() => supabaseService.getPassengers(), storage.getPassengers()),
+            fetchWithFallback(() => supabaseService.getPayments(), storage.getPayments()),
+            fetchWithFallback(() => supabaseService.getReports(), storage.getReports()),
+            fetchWithFallback(() => supabaseService.getExpenses(), storage.getExpenses())
           ]);
           
-          const loadedCongs = c.length > 0 ? c : storage.getCongregations();
-          
-          // Ensure all congregations have an access code if missing
-          const fixedCongs = loadedCongs.map(cong => ({
+          if (!isMounted) return;
+
+          const loadedCongs = c && c.length > 0 ? c : storage.getCongregations();
+          const fixedCongs = loadedCongs.map((cong: Congregation) => ({
             ...cong,
             accessCode: cong.accessCode || Math.floor(100000 + Math.random() * 900000).toString()
           }));
           
-          setUsers(u.length > 0 ? u : storage.getUsers());
-          setEvents(e.length > 0 ? e : storage.getEvents());
+          setUsers(u || storage.getUsers());
+          setEvents(e || storage.getEvents());
           setCongregations(fixedCongs);
-          setPassengers(p);
-          setPayments(pay);
-          setReports(r);
-          setExpenses(exp);
+          setPassengers(p || []);
+          setPayments(pay || []);
+          setReports(r || []);
+          setExpenses(exp || []);
         } else {
           // Fallback to LocalStorage
+          if (!isMounted) return;
           const loadedCongs = storage.getCongregations();
           const fixedCongs = loadedCongs.map(cong => ({
             ...cong,
@@ -105,27 +127,19 @@ const App: React.FC = () => {
           setExpenses(storage.getExpenses());
         }
       } catch (error) {
-        console.warn('Supabase not reachable or configured incorrectly. Falling back to LocalStorage.', error);
-        // Fallback on error
-        const loadedCongs = storage.getCongregations();
-        const fixedCongs = loadedCongs.map(cong => ({
-          ...cong,
-          accessCode: cong.accessCode || Math.floor(100000 + Math.random() * 900000).toString()
-        }));
-
-        setUsers(storage.getUsers());
-        setEvents(storage.getEvents());
-        setCongregations(fixedCongs);
-        setPassengers(storage.getPassengers());
-        setPayments(storage.getPayments());
-        setReports(storage.getReports());
-        setExpenses(storage.getExpenses());
+        console.error('Critical error in loadData:', error);
+        if (isMounted) {
+          setCongregations(storage.getCongregations());
+          setEvents(storage.getEvents());
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted) setIsLoading(false);
+        clearTimeout(timeoutId);
       }
     };
 
     loadData();
+    return () => { isMounted = false; };
   }, [user?.id]);
 
   useEffect(() => {

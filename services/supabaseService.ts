@@ -16,19 +16,19 @@ export const supabaseService = {
   validateAccessCode: async (code: string): Promise<string | null> => {
     const { data, error } = await supabase
       .from('congregation_access_codes')
-      .select('congregation_id')
+      .select('congregationId')
       .eq('code', code.toUpperCase())
-      .eq('is_active', true)
+      .eq('isActive', true)
       .single();
     
     if (error || !data) return null;
-    return data.congregation_id;
+    return data.congregationId;
   },
 
   linkUserToCongregation: async (userId: string, congregationId: string) => {
     const { error } = await supabase
       .from('profiles')
-      .update({ congregation_id: congregationId })
+      .update({ congregationId: congregationId })
       .eq('id', userId);
     if (error) throw error;
   },
@@ -61,13 +61,25 @@ export const supabaseService = {
 
   // Congregations
   getCongregations: async (): Promise<Congregation[]> => {
-    const { data, error } = await supabase.from('congregations').select('*, congregation_access_codes(code)');
-    if (error) throw error;
-    // Map access code from the joined table if needed
-    return data.map(c => ({
-      ...c,
-      accessCode: c.congregation_access_codes?.[0]?.code || ''
-    })) as Congregation[];
+    try {
+      const { data, error } = await supabase.from('congregations').select('*, congregation_access_codes(code)');
+      
+      if (error) {
+        console.warn('Error fetching congregations with access codes, trying simple fetch:', error);
+        const { data: simpleData, error: simpleError } = await supabase.from('congregations').select('*');
+        if (simpleError) throw simpleError;
+        return simpleData as Congregation[];
+      }
+      
+      // Map access code from the joined table if needed
+      return data.map(c => ({
+        ...c,
+        accessCode: c.congregation_access_codes?.[0]?.code || ''
+      })) as Congregation[];
+    } catch (err) {
+      console.error('Failed to get congregations:', err);
+      throw err;
+    }
   },
   saveCongregation: async (cong: Congregation) => {
     // 1. Sanitize data: remove properties that are not columns in the 'congregations' table
@@ -82,10 +94,10 @@ export const supabaseService = {
       const { error: codeError } = await supabase
         .from('congregation_access_codes')
         .upsert({
-          congregation_id: cong.id,
+          congregationId: cong.id,
           code: accessCode.toUpperCase(),
-          is_active: true
-        }, { onConflict: 'congregation_id' });
+          isActive: true
+        }, { onConflict: 'congregationId' });
       if (codeError) console.warn('Error saving access code:', codeError);
     }
   },

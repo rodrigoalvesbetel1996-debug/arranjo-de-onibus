@@ -70,8 +70,10 @@ export const supabaseService = {
     })) as Congregation[];
   },
   saveCongregation: async (cong: Congregation) => {
-    // 1. Save to congregations table
-    const { accessCode, ...congData } = cong;
+    // 1. Sanitize data: remove properties that are not columns in the 'congregations' table
+    // We extract accessCode (to save in other table) and congregation_access_codes/stats (which come from joins/calculations)
+    const { accessCode, congregation_access_codes, stats, ...congData } = cong as any;
+    
     const { error: congError } = await supabase.from('congregations').upsert(congData);
     if (congError) throw congError;
 

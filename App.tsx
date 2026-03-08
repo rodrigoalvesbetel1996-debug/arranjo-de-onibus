@@ -48,38 +48,23 @@ const App: React.FC = () => {
   // Initial Data Loading
   useEffect(() => {
     let isMounted = true;
+    
     const loadData = async () => {
-      // Safety timeout to prevent indefinite loading screen
-      const timeoutId = setTimeout(() => {
-        if (isMounted && isLoading) {
-          console.warn('Data loading timed out. Forcing loading state to false.');
-          setIsLoading(false);
-        }
-      }, 8000);
+      // We start by showing the UI immediately if we have local data
+      // or if we are not logged in.
+      if (!user) {
+        setIsLoading(false);
+      }
 
       try {
-        if (!user && isSupabaseConfigured) {
-          try {
-            const c = await supabaseService.getCongregations();
-            if (isMounted) setCongregations(c.length > 0 ? c : storage.getCongregations());
-          } catch (e) {
-            console.warn('Error loading congregations for login:', e);
-            if (isMounted) setCongregations(storage.getCongregations());
-          }
-          if (isMounted) setIsLoading(false);
-          clearTimeout(timeoutId);
-          return;
-        }
-
-        if (isMounted) setIsLoading(true);
-        
         if (isSupabaseConfigured) {
-          // Load data with individual error handling to prevent one failing table from blocking everything
           const fetchWithFallback = async (fetcher: () => Promise<any>, fallback: any) => {
             try {
-              return await fetcher();
+              const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Timeout')), 3000)
+              );
+              return await Promise.race([fetcher(), timeoutPromise]);
             } catch (e) {
-              console.warn('Fetch failed, using fallback:', e);
               return fallback;
             }
           };
@@ -96,45 +81,24 @@ const App: React.FC = () => {
           
           if (!isMounted) return;
 
-          const loadedCongs = c && c.length > 0 ? c : storage.getCongregations();
-          const fixedCongs = loadedCongs.map((cong: Congregation) => ({
-            ...cong,
-            accessCode: cong.accessCode || Math.floor(100000 + Math.random() * 900000).toString()
-          }));
-          
-          setUsers(u || storage.getUsers());
-          setEvents(e || storage.getEvents());
-          setCongregations(fixedCongs);
-          setPassengers(p || []);
-          setPayments(pay || []);
-          setReports(r || []);
-          setExpenses(exp || []);
-        } else {
-          // Fallback to LocalStorage
-          if (!isMounted) return;
-          const loadedCongs = storage.getCongregations();
-          const fixedCongs = loadedCongs.map(cong => ({
-            ...cong,
-            accessCode: cong.accessCode || Math.floor(100000 + Math.random() * 900000).toString()
-          }));
-
-          setUsers(storage.getUsers());
-          setEvents(storage.getEvents());
-          setCongregations(fixedCongs);
-          setPassengers(storage.getPassengers());
-          setPayments(storage.getPayments());
-          setReports(storage.getReports());
-          setExpenses(storage.getExpenses());
+          if (u) setUsers(u);
+          if (e) setEvents(e);
+          if (c) {
+            const fixedCongs = c.map((cong: Congregation) => ({
+              ...cong,
+              accessCode: cong.accessCode || Math.floor(100000 + Math.random() * 900000).toString()
+            }));
+            setCongregations(fixedCongs);
+          }
+          if (p) setPassengers(p);
+          if (pay) setPayments(pay);
+          if (r) setReports(r);
+          if (exp) setExpenses(exp);
         }
       } catch (error) {
-        console.error('Critical error in loadData:', error);
-        if (isMounted) {
-          setCongregations(storage.getCongregations());
-          setEvents(storage.getEvents());
-        }
+        console.error('Background sync error:', error);
       } finally {
         if (isMounted) setIsLoading(false);
-        clearTimeout(timeoutId);
       }
     };
 

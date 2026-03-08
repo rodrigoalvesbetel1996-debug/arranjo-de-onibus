@@ -2,14 +2,45 @@ import { supabase } from '@/lib/supabase';
 import { User, JWEvent, Congregation, Passenger, PaymentReceipt, SHReport, Expense } from '@/types';
 
 export const supabaseService = {
-  // Users
+  // Auth & Profiles
+  getCurrentProfile: async (userId: string): Promise<User | null> => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    if (error) return null;
+    return data as User;
+  },
+
+  validateAccessCode: async (code: string): Promise<string | null> => {
+    const { data, error } = await supabase
+      .from('congregation_access_codes')
+      .select('congregation_id')
+      .eq('code', code.toUpperCase())
+      .eq('is_active', true)
+      .single();
+    
+    if (error || !data) return null;
+    return data.congregation_id;
+  },
+
+  linkUserToCongregation: async (userId: string, congregationId: string) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ congregation_id: congregationId })
+      .eq('id', userId);
+    if (error) throw error;
+  },
+
+  // Users (Profiles)
   getUsers: async (): Promise<User[]> => {
-    const { data, error } = await supabase.from('users').select('*');
+    const { data, error } = await supabase.from('profiles').select('*');
     if (error) throw error;
     return data as User[];
   },
   saveUser: async (user: User) => {
-    const { error } = await supabase.from('users').upsert(user);
+    const { error } = await supabase.from('profiles').upsert(user);
     if (error) throw error;
   },
 
@@ -30,9 +61,13 @@ export const supabaseService = {
 
   // Congregations
   getCongregations: async (): Promise<Congregation[]> => {
-    const { data, error } = await supabase.from('congregations').select('*');
+    const { data, error } = await supabase.from('congregations').select('*, congregation_access_codes(code)');
     if (error) throw error;
-    return data as Congregation[];
+    // Map access code from the joined table if needed
+    return data.map(c => ({
+      ...c,
+      accessCode: c.congregation_access_codes?.[0]?.code || ''
+    })) as Congregation[];
   },
   saveCongregation: async (cong: Congregation) => {
     const { error } = await supabase.from('congregations').upsert(cong);

@@ -15,7 +15,7 @@ import UserManagement from '@/views/UserManagement';
 import CongregationManagement from '@/views/CongregationManagement';
 
 const App: React.FC = () => {
-  const [user, setUser] = useState<User | null>(storage.getSession());
+  const [user, setUser] = useState<User | null>(null);
   const [currentView, setCurrentView] = useState('dashboard');
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('jw_theme');
@@ -31,9 +31,35 @@ const App: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Auth Session Management
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        const profile = await supabaseService.getCurrentProfile(session.user.id);
+        setUser(profile);
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   // Initial Data Loading
   useEffect(() => {
     const loadData = async () => {
+      if (!user && isSupabaseConfigured) {
+        // If not logged in and using supabase, we might still want to load congregations for the login screen
+        try {
+          const c = await supabaseService.getCongregations();
+          setCongregations(c.length > 0 ? c : storage.getCongregations());
+        } catch (e) {
+          setCongregations(storage.getCongregations());
+        }
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
       try {
         if (isSupabaseConfigured) {
@@ -171,13 +197,14 @@ const App: React.FC = () => {
 
   const handleLogin = (u: User) => {
     setUser(u);
-    storage.setSession(u);
     setCurrentView('dashboard');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (isSupabaseConfigured) {
+      await supabase.auth.signOut();
+    }
     setUser(null);
-    storage.setSession(null);
   };
 
   const addPassengerGroup = (group: Partial<Passenger>[], existingGroupId?: string) => {

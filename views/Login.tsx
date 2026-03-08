@@ -1,6 +1,8 @@
 
 import React, { useState } from 'react';
 import { User, UserRole, Congregation } from '@/types';
+import { supabase } from '@/lib/supabase';
+import { supabaseService } from '@/services/supabaseService';
 
 interface LoginProps {
   onLogin: (u: User) => void;
@@ -17,6 +19,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, users, congregations
   const [adminName, setAdminName] = useState('');
   const [isAdminRegistering, setIsAdminRegistering] = useState(false);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   // Auth Flow State
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -43,91 +46,150 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, users, congregations
     setShowAuthModal(true);
   };
 
-  const handleAuthSubmit = (e: React.FormEvent) => {
+  const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setModalError('');
+    setIsLoading(true);
 
-    if (authStep === 'LOGIN_OR_REGISTER') {
-      if (isRegistering) {
-        // Check if user already exists
-        if (users.find(u => u.email === formData.email)) {
-          setModalError('Este e-mail já está cadastrado. Faça login.');
+    try {
+      if (authStep === 'LOGIN_OR_REGISTER') {
+        if (isRegistering) {
+          // 1. Supabase Auth Sign Up
+          const { data, error: signUpError } = await supabase.auth.signUp({
+            email: formData.email,
+            password: formData.password,
+            options: {
+              data: {
+                full_name: formData.name,
+                role: 'congregation_user'
+              }
+            }
+          });
+
+          if (signUpError) throw signUpError;
+          
+          // 2. Create Profile in public.profiles (usually handled by trigger, but we'll do it manually for robustness)
+          if (data.user) {
+            await supabaseService.saveUser({
+              id: data.user.id,
+              email: formData.email,
+              name: formData.name,
+              role: UserRole.CONGREGATION
+            });
+          }
+
+          setAuthStep('CONFIRM_EMAIL');
+        } else {
+          // Login Logic
+          const { data, error: signInError } = await supabase.auth.signInWithPassword({
+            email: formData.email,
+            password: formData.password
+          });
+
+          if (signInError) throw signInError;
+
+          if (data.user) {
+            const profile = await supabaseService.getCurrentProfile(data.user.id);
+            if (profile) {
+              if (profile.congregationId !== selectedCongregation?.id && profile.role !== UserRole.ADMIN) {
+                // If user has a congregation but it's not this one
+                if (profile.congregationId) {
+                  setModalError('Este usuário pertence a outra congregação.');
+                  return;
+                }
+                // If user has no congregation, go to access code step
+                setAuthStep('ACCESS_CODE');
+                return;
+              }
+              onLogin(profile);
+            } else {
+              setModalError('Perfil não encontrado.');
+            }
+          }
+        }
+      } else if (authStep === 'ACCESS_CODE') {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setModalError('Sessão expirada. Faça login novamente.');
+          setAuthStep('LOGIN_OR_REGISTER');
           return;
         }
-        // Proceed to email confirmation
-        setAuthStep('CONFIRM_EMAIL');
-      } else {
-        // Login Logic
-        const user = users.find(u => u.email === formData.email && u.password === formData.password);
-        if (user) {
-          if (user.congregationId !== selectedCongregation?.id && user.role !== UserRole.ADMIN) {
-             setModalError('Este usuário não pertence a esta congregação.');
-             return;
+
+        const inputCode = formData.accessCode.trim();
+        const congregationId = await supabaseService.validateAccessCode(inputCode);
+
+        if (congregationId) {
+          if (congregationId !== selectedCongregation?.id) {
+            setModalError('Este código pertence a outra congregação.');
+            return;
           }
-          onLogin(user);
+
+          await supabaseService.linkUserToCongregation(user.id, congregationId);
+          const profile = await supabaseService.getCurrentProfile(user.id);
+          if (profile) onLogin(profile);
         } else {
-          setModalError('Credenciais inválidas.');
+          setModalError('Código de acesso inválido ou inativo.');
         }
       }
-    } else if (authStep === 'CONFIRM_EMAIL') {
-      // Simulate email confirmation
-      // For prototype, any code works or we just proceed
-      setAuthStep('ACCESS_CODE');
-    } else if (authStep === 'ACCESS_CODE') {
-      // Validate Access Code against the latest data from props
-      const latestCong = congregations.find(c => c.id === selectedCongregation?.id);
-      const inputCode = formData.accessCode.trim();
-      const targetCode = (latestCong?.accessCode || '').trim();
-
-      if (targetCode === '') {
-        setModalError('Esta congregação ainda não possui um código de acesso configurado. Contate o administrador.');
-        return;
-      }
-
-      if (inputCode === targetCode) {
-        // Create User and Login
-        const newUser: User = {
-          id: `user-${Date.now()}`,
-          email: formData.email,
-          password: formData.password,
-          name: formData.name,
-          role: UserRole.CONGREGATION,
-          congregationId: latestCong?.id || selectedCongregation?.id || ''
-        };
-        onRegister(newUser);
-      } else {
-        setModalError(`Código de acesso inválido para ${latestCong?.name || 'esta congregação'}.`);
-      }
+    } catch (err: any) {
+      setModalError(err.message || 'Ocorreu um erro na autenticação.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleAdminAuth = (e: React.FormEvent) => {
+  const handleAdminAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsLoading(true);
 
-    if (isAdminRegistering) {
-      // Check if admin already exists
-      if (users.find(u => u.email === email)) {
-        setError('Este e-mail já está cadastrado.');
-        return;
-      }
-      
-      const newAdmin: User = {
-        id: `admin-${Date.now()}`,
-        email,
-        password,
-        name: adminName,
-        role: UserRole.ADMIN
-      };
-      onRegister(newAdmin);
-    } else {
-      // Login Logic
-      const admin = users.find(u => u.role === UserRole.ADMIN && u.email === email && u.password === password);
-      if (admin) {
-        onLogin(admin);
+    try {
+      if (isAdminRegistering) {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: adminName,
+              role: 'admin'
+            }
+          }
+        });
+
+        if (signUpError) throw signUpError;
+
+        if (data.user) {
+          await supabaseService.saveUser({
+            id: data.user.id,
+            email,
+            name: adminName,
+            role: UserRole.ADMIN
+          });
+          alert('Cadastro realizado! Verifique seu email para confirmar.');
+          setIsAdminRegistering(false);
+        }
       } else {
-        setError('Acesso negado. Verifique as credenciais.');
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (signInError) throw signInError;
+
+        if (data.user) {
+          const profile = await supabaseService.getCurrentProfile(data.user.id);
+          if (profile && profile.role === UserRole.ADMIN) {
+            onLogin(profile);
+          } else {
+            setError('Acesso negado. Apenas administradores podem entrar aqui.');
+            await supabase.auth.signOut();
+          }
+        }
       }
+    } catch (err: any) {
+      setError(err.message || 'Erro ao autenticar admin.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -229,9 +291,10 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, users, congregations
                 {error && <p className="text-red-500 dark:text-red-400 text-xs font-bold bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-100 dark:border-red-900/30">⚠️ {error}</p>}
                 <button
                   type="submit"
-                  className="w-full bg-slate-900 dark:bg-indigo-600 text-white py-4 rounded-xl font-black hover:opacity-90 transition-all shadow-xl shadow-slate-200 dark:shadow-none transform active:scale-[0.98]"
+                  disabled={isLoading}
+                  className="w-full bg-slate-900 dark:bg-indigo-600 text-white py-4 rounded-xl font-black hover:opacity-90 transition-all shadow-xl shadow-slate-200 dark:shadow-none transform active:scale-[0.98] disabled:opacity-50"
                 >
-                  {isAdminRegistering ? 'Cadastrar Admin' : 'Entrar como Admin'}
+                  {isLoading ? 'Carregando...' : (isAdminRegistering ? 'Cadastrar Admin' : 'Entrar como Admin')}
                 </button>
               </form>
             </section>
@@ -385,9 +448,10 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, users, congregations
               {authStep !== 'CONFIRM_EMAIL' && (
                 <button
                   type="submit"
-                  className="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold shadow-lg shadow-indigo-100 dark:shadow-none text-sm uppercase tracking-wide hover:bg-indigo-700 transition-all"
+                  disabled={isLoading}
+                  className="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold shadow-lg shadow-indigo-100 dark:shadow-none text-sm uppercase tracking-wide hover:bg-indigo-700 transition-all disabled:opacity-50"
                 >
-                  {authStep === 'LOGIN_OR_REGISTER' ? (isRegistering ? 'Continuar' : 'Entrar') : 'Acessar Painel'}
+                  {isLoading ? 'Carregando...' : (authStep === 'LOGIN_OR_REGISTER' ? (isRegistering ? 'Continuar' : 'Entrar') : 'Acessar Painel')}
                 </button>
               )}
             </form>

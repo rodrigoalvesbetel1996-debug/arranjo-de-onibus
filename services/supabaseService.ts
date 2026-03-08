@@ -70,8 +70,22 @@ export const supabaseService = {
     })) as Congregation[];
   },
   saveCongregation: async (cong: Congregation) => {
-    const { error } = await supabase.from('congregations').upsert(cong);
-    if (error) throw error;
+    // 1. Save to congregations table
+    const { accessCode, ...congData } = cong;
+    const { error: congError } = await supabase.from('congregations').upsert(congData);
+    if (congError) throw congError;
+
+    // 2. Save to congregation_access_codes table
+    if (accessCode) {
+      const { error: codeError } = await supabase
+        .from('congregation_access_codes')
+        .upsert({
+          congregation_id: cong.id,
+          code: accessCode.toUpperCase(),
+          is_active: true
+        }, { onConflict: 'congregation_id' });
+      if (codeError) console.warn('Error saving access code:', codeError);
+    }
   },
 
   // Passengers

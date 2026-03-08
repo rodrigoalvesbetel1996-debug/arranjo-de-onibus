@@ -126,7 +126,7 @@ const App: React.FC = () => {
     };
 
     loadData();
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     if (isDarkMode) {

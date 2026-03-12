@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { authService } from '@/services/authService';
 import { supabaseService } from '@/services/supabaseService';
+import { isSupabaseConfigured } from '@/lib/supabase';
 import { Congregation } from '@/types';
 
 interface LoginProps {
@@ -24,6 +25,12 @@ const Login: React.FC<LoginProps> = ({ isDarkMode, toggleTheme }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!isSupabaseConfigured) {
+      setError('O sistema não está conectado ao banco de dados. Verifique as configurações do Supabase.');
+      return;
+    }
+
     setIsLoading(true);
 
     try {

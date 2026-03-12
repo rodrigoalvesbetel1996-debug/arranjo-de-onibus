@@ -42,31 +42,59 @@ RETURNS TRIGGER AS $$
 DECLARE
     v_congregation_id TEXT;
     v_access_code TEXT;
+    v_name TEXT;
+    v_role TEXT;
 BEGIN
-    INSERT INTO public.profiles (id, name, role)
-    VALUES (
-        new.id,
-        COALESCE(new.raw_user_meta_data->>'name', 'Usuário'),
-        COALESCE(new.raw_user_meta_data->>'role', 'user')
-    );
+    -- Safely extract metadata
+    IF new.raw_user_meta_data IS NOT NULL THEN
+        v_name := NULLIF(new.raw_user_meta_data->>'name', '');
+        v_role := LOWER(NULLIF(new.raw_user_meta_data->>'role', ''));
+        v_access_code := NULLIF(new.raw_user_meta_data->>'accessCode', '');
+    END IF;
+
+    -- Fallbacks
+    IF v_name IS NULL THEN
+        v_name := COALESCE(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1), 'Usuário');
+    END IF;
+
+    IF v_role IS NULL OR v_role NOT IN ('admin', 'user') THEN
+        v_role := 'user';
+    END IF;
+
+    -- Insert profile
+    BEGIN
+        INSERT INTO public.profiles (id, name, role)
+        VALUES (
+            new.id,
+            v_name,
+            v_role
+        );
+    EXCEPTION WHEN OTHERS THEN
+        RAISE LOG 'Error creating profile for user %: %', new.id, SQLERRM;
+        -- We don't re-raise here to allow the user to be created even if profile fails,
+        -- though ideally we want them in sync. If it fails, it's likely a constraint issue.
+    END;
 
     -- Handle access code if provided
-    v_access_code := new.raw_user_meta_data->>'accessCode';
     IF v_access_code IS NOT NULL THEN
-        SELECT congregation_id INTO v_congregation_id
-        FROM public.access_codes
-        WHERE code = v_access_code AND active = true;
+        BEGIN
+            SELECT congregation_id INTO v_congregation_id
+            FROM public.access_codes
+            WHERE code = v_access_code AND active = true;
 
-        IF v_congregation_id IS NOT NULL THEN
-            INSERT INTO public.users_congregations (user_id, congregation_id)
-            VALUES (new.id, v_congregation_id)
-            ON CONFLICT DO NOTHING;
-        END IF;
+            IF v_congregation_id IS NOT NULL THEN
+                INSERT INTO public.users_congregations (user_id, congregation_id)
+                VALUES (new.id, v_congregation_id)
+                ON CONFLICT DO NOTHING;
+            END IF;
+        EXCEPTION WHEN OTHERS THEN
+            RAISE LOG 'Error linking congregation for user %: %', new.id, SQLERRM;
+        END;
     END IF;
 
     RETURN new;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
@@ -137,9 +165,11 @@ ALTER TABLE public.access_codes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users_congregations ENABLE ROW LEVEL SECURITY;
 
 -- Profiles: Users can read their own profile. Admins can read all profiles.
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
 CREATE POLICY "Users can view own profile" ON public.profiles
     FOR SELECT USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Admins can view all profiles" ON public.profiles;
 CREATE POLICY "Admins can view all profiles" ON public.profiles
     FOR SELECT USING (
         EXISTS (
@@ -147,12 +177,14 @@ CREATE POLICY "Admins can view all profiles" ON public.profiles
         )
     );
 
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile" ON public.profiles
     FOR UPDATE USING (auth.uid() = id);
 
 -- Congregations: 
 -- Users can view congregations they belong to.
 -- Admins can view congregations they created.
+DROP POLICY IF EXISTS "Users can view their congregations" ON public.congregations;
 CREATE POLICY "Users can view their congregations" ON public.congregations
     FOR SELECT USING (
         EXISTS (
@@ -165,6 +197,7 @@ CREATE POLICY "Users can view their congregations" ON public.congregations
         )
     );
 
+DROP POLICY IF EXISTS "Admins can insert congregations" ON public.congregations;
 CREATE POLICY "Admins can insert congregations" ON public.congregations
     FOR INSERT WITH CHECK (
         EXISTS (
@@ -172,6 +205,7 @@ CREATE POLICY "Admins can insert congregations" ON public.congregations
         )
     );
 
+DROP POLICY IF EXISTS "Admins can update their congregations" ON public.congregations;
 CREATE POLICY "Admins can update their congregations" ON public.congregations
     FOR UPDATE USING (
         created_by = auth.uid() OR 
@@ -179,6 +213,7 @@ CREATE POLICY "Admins can update their congregations" ON public.congregations
     );
 
 -- Access Codes: Admins can manage access codes for their congregations
+DROP POLICY IF EXISTS "Admins can manage access codes" ON public.access_codes;
 CREATE POLICY "Admins can manage access codes" ON public.access_codes
     FOR ALL USING (
         EXISTS (
@@ -188,6 +223,7 @@ CREATE POLICY "Admins can manage access codes" ON public.access_codes
     );
 
 -- Users Congregations: Users can view their own associations. Admins can view all.
+DROP POLICY IF EXISTS "Users can view own associations" ON public.users_congregations;
 CREATE POLICY "Users can view own associations" ON public.users_congregations
     FOR SELECT USING (
         user_id = auth.uid() OR
@@ -197,16 +233,20 @@ CREATE POLICY "Users can view own associations" ON public.users_congregations
     );
 
 -- Events: Admins can manage, Users can read
+DROP POLICY IF EXISTS "Admins can manage events" ON public.events;
 CREATE POLICY "Admins can manage events" ON public.events
     FOR ALL USING (
         EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
     );
+
+DROP POLICY IF EXISTS "Users can read events" ON public.events;
 CREATE POLICY "Users can read events" ON public.events
     FOR SELECT USING (
         EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'user')
     );
 
 -- Passengers: Users can manage passengers in their congregations. Admins can manage all.
+DROP POLICY IF EXISTS "Users can manage their congregation passengers" ON public.passengers;
 CREATE POLICY "Users can manage their congregation passengers" ON public.passengers
     FOR ALL USING (
         EXISTS (
@@ -217,6 +257,7 @@ CREATE POLICY "Users can manage their congregation passengers" ON public.passeng
     );
 
 -- Payments: Users can manage payments in their congregations. Admins can manage all.
+DROP POLICY IF EXISTS "Users can manage their congregation payments" ON public.payments;
 CREATE POLICY "Users can manage their congregation payments" ON public.payments
     FOR ALL USING (
         EXISTS (
@@ -227,6 +268,7 @@ CREATE POLICY "Users can manage their congregation payments" ON public.payments
     );
 
 -- SH Reports: Users can manage reports in their congregations. Admins can manage all.
+DROP POLICY IF EXISTS "Users can manage their congregation reports" ON public.sh_reports;
 CREATE POLICY "Users can manage their congregation reports" ON public.sh_reports
     FOR ALL USING (
         EXISTS (
@@ -237,6 +279,7 @@ CREATE POLICY "Users can manage their congregation reports" ON public.sh_reports
     );
 
 -- Expenses: Admins can manage expenses.
+DROP POLICY IF EXISTS "Admins can manage expenses" ON public.expenses;
 CREATE POLICY "Admins can manage expenses" ON public.expenses
     FOR ALL USING (
         EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')

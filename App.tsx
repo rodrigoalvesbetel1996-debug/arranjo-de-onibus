@@ -59,15 +59,21 @@ const App: React.FC = () => {
       }
 
       setIsLoading(true);
+      
+      // Cria um timer para desistir do Supabase se demorar mais de 5 segundos
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('TIMEOUT')), 5000)
+      );
+
       try {
         if (isSupabaseConfigured) {
-          // Carrega cada serviço individualmente para que uma falha não trave as outras
           const fetchService = async (serviceMethod: () => Promise<any>, fallbackData: any) => {
             try {
-              const data = await serviceMethod();
+              // Tenta buscar o dado, mas com tempo limite
+              const data = await Promise.race([serviceMethod(), timeoutPromise]);
               return data && data.length > 0 ? data : fallbackData;
             } catch (err) {
-              console.warn(`Erro ao carregar serviço:`, err);
+              console.warn(`Serviço ignorado (lento ou erro):`, err);
               return fallbackData;
             }
           };

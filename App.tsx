@@ -61,19 +61,30 @@ const App: React.FC = () => {
       setIsLoading(true);
       try {
         if (isSupabaseConfigured) {
+          // Carrega cada serviço individualmente para que uma falha não trave as outras
+          const fetchService = async (serviceMethod: () => Promise<any>, fallbackData: any) => {
+            try {
+              const data = await serviceMethod();
+              return data && data.length > 0 ? data : fallbackData;
+            } catch (err) {
+              console.warn(`Erro ao carregar serviço:`, err);
+              return fallbackData;
+            }
+          };
+
           const [u, e, c, p, pay, r, exp] = await Promise.all([
-            supabaseService.getUsers(),
-            supabaseService.getEvents(),
-            supabaseService.getCongregations(),
-            supabaseService.getPassengers(),
-            supabaseService.getPayments(),
-            supabaseService.getReports(),
-            supabaseService.getExpenses()
+            fetchService(supabaseService.getUsers, storage.getUsers()),
+            fetchService(supabaseService.getEvents, storage.getEvents()),
+            fetchService(supabaseService.getCongregations, storage.getCongregations()),
+            fetchService(supabaseService.getPassengers, storage.getPassengers()),
+            fetchService(supabaseService.getPayments, storage.getPayments()),
+            fetchService(supabaseService.getReports, storage.getReports()),
+            fetchService(supabaseService.getExpenses, storage.getExpenses())
           ]);
           
-          setUsers(u.length > 0 ? u : storage.getUsers());
-          setEvents(e.length > 0 ? e : storage.getEvents());
-          setCongregations(c.length > 0 ? c : storage.getCongregations());
+          setUsers(u);
+          setEvents(e);
+          setCongregations(c);
           setPassengers(p);
           setPayments(pay);
           setReports(r);

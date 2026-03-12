@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { User, UserRole, JWEvent, Passenger, Congregation, PaymentReceipt, SHReport, Expense } from '@/types';
 import { storage } from '@/services/storageService';
 import { supabaseService } from '@/services/supabaseService';
@@ -13,14 +14,25 @@ import AdminEvents from '@/views/AdminEvents';
 import SHReportForm from '@/views/SHReportForm';
 import UserManagement from '@/views/UserManagement';
 import CongregationManagement from '@/views/CongregationManagement';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { useAuth } from '@/hooks/useAuth';
 
 const App: React.FC = () => {
-  const [user, setUser] = useState<User | null>(storage.getSession());
+  const { session, profile, isLoading: isAuthLoading, signOut } = useAuth();
   const [currentView, setCurrentView] = useState('dashboard');
+
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('jw_theme');
     return saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
   });
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
   
   const [events, setEvents] = useState<JWEvent[]>([]);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
@@ -34,6 +46,18 @@ const App: React.FC = () => {
   // Initial Data Loading
   useEffect(() => {
     const loadData = async () => {
+      if (!session?.user) {
+        setUsers([]);
+        setEvents([]);
+        setCongregations([]);
+        setPassengers([]);
+        setPayments([]);
+        setReports([]);
+        setExpenses([]);
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
       try {
         if (isSupabaseConfigured) {
@@ -80,7 +104,7 @@ const App: React.FC = () => {
     };
 
     loadData();
-  }, []);
+  }, [session?.user?.id]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -148,17 +172,6 @@ const App: React.FC = () => {
       users.forEach(u => supabaseService.saveUser(u).catch(err => console.warn('Supabase save error:', err)));
     }
   }, [users, isLoading]);
-
-  const handleLogin = (u: User) => {
-    setUser(u);
-    storage.setSession(u);
-    setCurrentView('dashboard');
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    storage.setSession(null);
-  };
 
   const addPassengerGroup = (group: Partial<Passenger>[], existingGroupId?: string) => {
     const groupId = existingGroupId || `group-${Date.now()}`;
@@ -279,10 +292,6 @@ const App: React.FC = () => {
   const updateUser = (updatedUser: User) => {
     setUsers(prev => {
       const newUsers = prev.map(u => u.id === updatedUser.id ? updatedUser : u);
-      if (user && user.id === updatedUser.id) {
-        setUser(updatedUser);
-        storage.setSession(updatedUser);
-      }
       return newUsers;
     });
   };
@@ -296,19 +305,15 @@ const App: React.FC = () => {
       ...newCong,
       id: newCong.id || `cong-${Date.now()}`,
       accessCode: Math.floor(100000 + Math.random() * 900000).toString(),
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
+      created_by: profile?.id
     } as Congregation;
     setCongregations(prev => [...prev, cong]);
   };
 
-  const registerUser = (newUser: User) => {
-    setUsers(prev => [...prev, newUser]);
-    handleLogin(newUser);
-  };
-
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
 
-  if (isLoading) {
+  if (isLoading || isAuthLoading) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4 transition-colors duration-300">
         <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
@@ -317,90 +322,147 @@ const App: React.FC = () => {
     );
   }
 
-  if (!user) {
-    return <Login onLogin={handleLogin} onRegister={registerUser} users={users} congregations={congregations} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />;
-  }
+  // Create a dummy user object for Layout compatibility until we refactor Layout
+  const legacyUser = profile ? {
+    id: profile.id,
+    name: profile.name,
+    email: session?.user?.email || '',
+    role: profile.role,
+    congregationId: profile.congregationId || ''
+  } as User : null;
 
   return (
-    <Layout
-      user={user}
-      onLogout={handleLogout}
-      onNavigate={setCurrentView}
-      currentView={currentView}
-      isDarkMode={isDarkMode}
-      toggleTheme={toggleTheme}
-    >
-      {currentView === 'dashboard' && (
-        <Dashboard
-          user={user}
-          events={events}
-          passengers={passengers}
-          payments={payments}
-          congregations={congregations}
-          expenses={expenses}
-          onSaveExpense={saveExpense}
-          onDeleteExpense={deleteExpense}
-        />
-      )}
-      {currentView === 'passengers' && (
-        <PassengerManagement
-          user={user}
-          passengers={passengers}
-          events={events}
-          onAddPassengerGroup={addPassengerGroup}
-          onRemovePassenger={removePassenger}
-          onUploadDoc={uploadPassengerDoc}
-        />
-      )}
-      {currentView === 'finance' && (
-        <FinancialManagement
-          user={user}
-          passengers={passengers}
-          events={events}
-          payments={payments}
-          onAddPayment={savePayment}
-          onDeletePayment={deletePayment}
-        />
-      )}
-      {currentView === 'events' && (
-        <AdminEvents
-          events={events}
-          onAddEvent={addEvent}
-          onToggleEvent={toggleEventStatus}
-          onEditEvent={editEvent}
-          onDeleteEvent={deleteEvent}
-        />
-      )}
-      {currentView === 'users' && (
-        <UserManagement
-          users={users}
-          onUpdateUser={updateUser}
-        />
-      )}
-      {currentView === 'sh-report' && (
-        <SHReportForm
-          user={user}
-          events={events}
-          reports={reports}
-          onSaveReport={saveSHReport}
-          onDeleteReport={deleteSHReport}
-        />
-      )}
-      {currentView === 'congregations' && (
-        <CongregationManagement
-          user={user}
-          congregations={congregations}
-          passengers={passengers}
-          payments={payments}
-          reports={reports}
-          events={events}
-          onUpdateCongregation={updateCongregation}
-          onAddCongregation={addCongregation}
-          onDeletePayment={deletePayment}
-          onAddPayment={savePayment}
-        />
-      )}
-    </Layout>
+    <Routes>
+      <Route path="/login" element={
+        session ? (
+          <Navigate to={profile?.role === 'admin' ? '/admin' : '/dashboard'} replace />
+        ) : (
+          <Login isDarkMode={isDarkMode} toggleTheme={toggleTheme} />
+        )
+      } />
+
+      {/* Admin Routes */}
+      <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+        <Route path="/admin" element={
+          <Layout
+            user={legacyUser!}
+            onLogout={handleLogout}
+            onNavigate={setCurrentView}
+            currentView={currentView}
+            isDarkMode={isDarkMode}
+            toggleTheme={toggleTheme}
+          >
+            {currentView === 'dashboard' && (
+              <Dashboard
+                user={legacyUser!}
+                events={events}
+                passengers={passengers}
+                payments={payments}
+                congregations={congregations}
+                expenses={expenses}
+                onSaveExpense={saveExpense}
+                onDeleteExpense={deleteExpense}
+              />
+            )}
+            {currentView === 'congregations' && (
+              <CongregationManagement
+                user={legacyUser!}
+                congregations={congregations}
+                passengers={passengers}
+                payments={payments}
+                reports={reports}
+                events={events}
+                onUpdateCongregation={updateCongregation}
+                onAddCongregation={addCongregation}
+                onDeletePayment={deletePayment}
+                onAddPayment={savePayment}
+              />
+            )}
+            {currentView === 'events' && (
+              <AdminEvents
+                events={events}
+                onAddEvent={addEvent}
+                onToggleEvent={toggleEventStatus}
+              />
+            )}
+            {currentView === 'users' && (
+              <UserManagement
+                users={users}
+                onUpdateUser={updateUser}
+              />
+            )}
+            {currentView === 'sh-report' && (
+              <SHReportForm
+                user={legacyUser!}
+                events={events}
+                reports={reports}
+                onSaveReport={saveSHReport}
+                onDeleteReport={deleteSHReport}
+              />
+            )}
+          </Layout>
+        } />
+      </Route>
+
+      {/* User Routes */}
+      <Route element={<ProtectedRoute allowedRoles={['user']} />}>
+        <Route path="/dashboard" element={
+          <Layout
+            user={legacyUser!}
+            onLogout={handleLogout}
+            onNavigate={setCurrentView}
+            currentView={currentView}
+            isDarkMode={isDarkMode}
+            toggleTheme={toggleTheme}
+          >
+            {currentView === 'dashboard' && (
+              <Dashboard
+                user={legacyUser!}
+                events={events}
+                passengers={passengers}
+                payments={payments}
+                congregations={congregations}
+                expenses={expenses}
+                onSaveExpense={saveExpense}
+                onDeleteExpense={deleteExpense}
+              />
+            )}
+            {currentView === 'passengers' && (
+              <PassengerManagement
+                user={legacyUser!}
+                passengers={passengers}
+                events={events}
+                onAddPassengerGroup={addPassengerGroup}
+                onRemovePassenger={removePassenger}
+                onUploadDoc={uploadPassengerDoc}
+              />
+            )}
+            {currentView === 'finance' && (
+              <FinancialManagement
+                user={legacyUser!}
+                passengers={passengers}
+                events={events}
+                payments={payments}
+                onAddPayment={savePayment}
+                onDeletePayment={deletePayment}
+              />
+            )}
+            {currentView === 'sh-report' && (
+              <SHReportForm
+                user={legacyUser!}
+                events={events}
+                reports={reports}
+                onSaveReport={saveSHReport}
+                onDeleteReport={deleteSHReport}
+              />
+            )}
+          </Layout>
+        } />
+      </Route>
+
+      <Route path="/" element={<Navigate to="/login" replace />} />
+      <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes>
   );
 };
 

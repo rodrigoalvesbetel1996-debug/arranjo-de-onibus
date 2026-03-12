@@ -1,7 +1,7 @@
 
 export enum UserRole {
-  ADMIN = 'ADMIN',
-  CONGREGATION = 'CONGREGATION'
+  ADMIN = 'admin',
+  CONGREGATION = 'user'
 }
 
 export enum EventType {
@@ -12,7 +12,7 @@ export enum EventType {
 
 export interface User {
   id: string;
-  email: string;
+  email?: string;
   password?: string;
   role: UserRole;
   congregationId?: string;
@@ -32,6 +32,7 @@ export interface Congregation {
   lastUpdated?: string;
   isPaidConfirmed?: boolean;
   accessCode?: string;
+  created_by?: string;
 }
 
 export interface JWEvent {

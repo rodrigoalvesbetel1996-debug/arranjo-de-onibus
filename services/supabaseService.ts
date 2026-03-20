@@ -2,18 +2,14 @@ import { supabase } from '@/lib/supabase';
 import { User, JWEvent, Congregation, Passenger, PaymentReceipt, SHReport, Expense } from '@/types';
 
 export const supabaseService = {
-  // Users (Profiles)
+  // Users
   getUsers: async (): Promise<User[]> => {
-    const { data, error } = await supabase.from('profiles').select('*');
+    const { data, error } = await supabase.from('users').select('*');
     if (error) throw error;
     return data as User[];
   },
   saveUser: async (user: User) => {
-    const { error } = await supabase.from('profiles').upsert({
-      id: user.id,
-      name: user.name,
-      role: user.role
-    });
+    const { error } = await supabase.from('users').upsert(user);
     if (error) throw error;
   },
 
@@ -34,41 +30,13 @@ export const supabaseService = {
 
   // Congregations
   getCongregations: async (): Promise<Congregation[]> => {
-    const { data, error } = await supabase.from('congregations').select('*, access_codes(code, created_at, active)');
+    const { data, error } = await supabase.from('congregations').select('*');
     if (error) throw error;
-    return data.map((c: any) => {
-      const { access_codes, ...rest } = c;
-      // Get the active code, or the latest one if none are active
-      const activeCode = access_codes?.find((ac: any) => ac.active);
-      const sortedCodes = access_codes?.sort((a: any, b: any) => 
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      return {
-        ...rest,
-        accessCode: activeCode?.code || sortedCodes?.[0]?.code || undefined
-      };
-    }) as Congregation[];
+    return data as Congregation[];
   },
   saveCongregation: async (cong: Congregation) => {
-    const { accessCode, ...congData } = cong;
-    const { error } = await supabase.from('congregations').upsert(congData);
+    const { error } = await supabase.from('congregations').upsert(cong);
     if (error) throw error;
-    
-    if (accessCode) {
-      // First, deactivate all existing codes for this congregation
-      await supabase.from('access_codes')
-        .update({ active: false })
-        .eq('congregation_id', cong.id)
-        .neq('code', accessCode);
-
-      // Then upsert the new code
-      const { error: codeError } = await supabase.from('access_codes').upsert({
-        code: accessCode,
-        congregation_id: cong.id,
-        active: true
-      }, { onConflict: 'code' });
-      if (codeError) throw codeError;
-    }
   },
 
   // Passengers

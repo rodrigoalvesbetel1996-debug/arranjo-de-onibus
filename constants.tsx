@@ -15,8 +15,7 @@ export const MOCK_CONGREGATIONS: Congregation[] = [
   { id: 'cong-02', name: 'Jardim Planalto', passengersTotal: 0, ticketsPurchased: 0, circuit: 'PR-10', cityState: 'Cascavel / PR', accessCode: '123456' },
   { id: 'cong-03', name: 'Vila Nova', passengersTotal: 0, ticketsPurchased: 0, circuit: 'PR-10', cityState: 'Cascavel / PR', accessCode: '123456' },
   { id: 'cong-04', name: 'Esperança', passengersTotal: 0, ticketsPurchased: 0, circuit: 'PR-12', cityState: 'Toledo / PR', accessCode: '123456' },
-  { id: 'cong-05', name: 'Jardim Varan', passengersTotal: 0, ticketsPurchased: 0, circuit: 'PR-12', cityState: 'Toledo / PR', accessCode: '123456' },
-  { id: 'cong-06', name: 'Jardim Castelo', passengersTotal: 0, ticketsPurchased: 0, circuit: 'SP-78', cityState: 'São Paulo / SP', accessCode: '123456' },
+  { id: 'cong-05', name: 'Jardim Castelo', passengersTotal: 0, ticketsPurchased: 0, circuit: 'PR-12', cityState: 'Toledo / PR', accessCode: '123456' },
 ];
 
 export const MOCK_EVENTS: JWEvent[] = [

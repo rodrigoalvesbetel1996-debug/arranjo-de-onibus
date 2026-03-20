@@ -1,59 +1,133 @@
 
-import React, { useState, useEffect } from 'react';
-import { authService } from '@/services/authService';
-import { supabaseService } from '@/services/supabaseService';
-import { isSupabaseConfigured } from '@/lib/supabase';
-import { Congregation } from '@/types';
+import React, { useState } from 'react';
+import { User, UserRole, Congregation } from '@/types';
 
 interface LoginProps {
+  onLogin: (u: User) => void;
+  onRegister: (u: User) => void;
+  users: User[];
+  congregations: Congregation[];
   isDarkMode: boolean;
   toggleTheme: () => void;
 }
 
-const Login: React.FC<LoginProps> = ({ isDarkMode, toggleTheme }) => {
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [role, setRole] = useState<'user' | 'admin'>('user');
-  
-  const [name, setName] = useState('');
+const Login: React.FC<LoginProps> = ({ onLogin, onRegister, users, congregations, isDarkMode, toggleTheme }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [accessCode, setAccessCode] = useState('');
-  
+  const [adminName, setAdminName] = useState('');
+  const [isAdminRegistering, setIsAdminRegistering] = useState(false);
   const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Auth Flow State
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [selectedCongregation, setSelectedCongregation] = useState<Congregation | null>(null);
+  const [authStep, setAuthStep] = useState<'LOGIN_OR_REGISTER' | 'CONFIRM_EMAIL' | 'ACCESS_CODE'>('LOGIN_OR_REGISTER');
+  const [isRegistering, setIsRegistering] = useState(true);
+  
+  // Form Data
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    confirmCode: '',
+    accessCode: ''
+  });
+  const [modalError, setModalError] = useState('');
+
+  const handleCongregationClick = (cong: Congregation) => {
+    setSelectedCongregation(cong);
+    setAuthStep('LOGIN_OR_REGISTER');
+    setIsRegistering(true);
+    setFormData({ name: '', email: '', password: '', confirmCode: '', accessCode: '' });
+    setModalError('');
+    setShowAuthModal(true);
+  };
+
+  const handleAuthSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setModalError('');
+
+    if (authStep === 'LOGIN_OR_REGISTER') {
+      if (isRegistering) {
+        // Check if user already exists
+        if (users.find(u => u.email === formData.email)) {
+          setModalError('Este e-mail já está cadastrado. Faça login.');
+          return;
+        }
+        // Proceed to email confirmation
+        setAuthStep('CONFIRM_EMAIL');
+      } else {
+        // Login Logic
+        const user = users.find(u => u.email === formData.email && u.password === formData.password);
+        if (user) {
+          if (user.congregationId !== selectedCongregation?.id && user.role !== UserRole.ADMIN) {
+             setModalError('Este usuário não pertence a esta congregação.');
+             return;
+          }
+          onLogin(user);
+        } else {
+          setModalError('Credenciais inválidas.');
+        }
+      }
+    } else if (authStep === 'CONFIRM_EMAIL') {
+      // Simulate email confirmation
+      // For prototype, any code works or we just proceed
+      setAuthStep('ACCESS_CODE');
+    } else if (authStep === 'ACCESS_CODE') {
+      // Validate Access Code against the latest data from props
+      const latestCong = congregations.find(c => c.id === selectedCongregation?.id);
+      const inputCode = formData.accessCode.trim();
+      const targetCode = (latestCong?.accessCode || '').trim();
+
+      if (targetCode === '') {
+        setModalError('Esta congregação ainda não possui um código de acesso configurado. Contate o administrador.');
+        return;
+      }
+
+      if (inputCode === targetCode) {
+        // Create User and Login
+        const newUser: User = {
+          id: `user-${Date.now()}`,
+          email: formData.email,
+          password: formData.password,
+          name: formData.name,
+          role: UserRole.CONGREGATION,
+          congregationId: latestCong?.id || selectedCongregation?.id || ''
+        };
+        onRegister(newUser);
+      } else {
+        setModalError(`Código de acesso inválido para ${latestCong?.name || 'esta congregação'}.`);
+      }
+    }
+  };
+
+  const handleAdminAuth = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (!isSupabaseConfigured) {
-      setError('O sistema não está conectado ao banco de dados. Verifique as configurações do Supabase.');
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      if (isRegistering) {
-        if (role === 'admin') {
-          await authService.registerAdmin(name, email, password);
-        } else {
-          if (!accessCode) {
-            throw new Error('Código de acesso é obrigatório para usuários.');
-          }
-          await authService.registerUser(name, email, password, accessCode);
-        }
+    if (isAdminRegistering) {
+      // Check if admin already exists
+      if (users.find(u => u.email === email)) {
+        setError('Este e-mail já está cadastrado.');
+        return;
+      }
+      
+      const newAdmin: User = {
+        id: `admin-${Date.now()}`,
+        email,
+        password,
+        name: adminName,
+        role: UserRole.ADMIN
+      };
+      onRegister(newAdmin);
+    } else {
+      // Login Logic
+      const admin = users.find(u => u.role === UserRole.ADMIN && u.email === email && u.password === password);
+      if (admin) {
+        onLogin(admin);
       } else {
-        await authService.login(email, password);
+        setError('Acesso negado. Verifique as credenciais.');
       }
-    } catch (err: any) {
-      let msg = err.message || 'Ocorreu um erro.';
-      if (msg === 'Failed to fetch') {
-        msg = 'Erro de conexão: Não foi possível alcançar o servidor do Supabase. Verifique sua internet, desative o AdBlock ou veja se o projeto está ativo no painel do Supabase.';
-      }
-      setError(msg);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -97,104 +171,229 @@ const Login: React.FC<LoginProps> = ({ isDarkMode, toggleTheme }) => {
             <p className="text-slate-500 dark:text-slate-400 font-bold uppercase text-[11px] tracking-widest mt-1">Identifique-se para continuar</p>
           </div>
 
-          <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-8">
-            <button
-              type="button"
-              onClick={() => { setIsRegistering(false); setError(''); }}
-              className={`flex-1 py-3 text-xs font-bold uppercase rounded-lg transition-all ${!isRegistering ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500'}`}
-            >
-              Entrar
-            </button>
-            <button
-              type="button"
-              onClick={() => { setIsRegistering(true); setError(''); }}
-              className={`flex-1 py-3 text-xs font-bold uppercase rounded-lg transition-all ${isRegistering ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500'}`}
-            >
-              Cadastrar
-            </button>
+          <div className="space-y-12">
+            {/* Admin Entry */}
+            <section>
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center">
+                  <span className="w-8 h-[1px] bg-slate-200 dark:bg-slate-800 mr-3"></span>
+                  Área Administrativa
+                </h3>
+                <button 
+                  onClick={() => {
+                    setIsAdminRegistering(!isAdminRegistering);
+                    setError('');
+                    setEmail('');
+                    setPassword('');
+                    setAdminName('');
+                  }}
+                  className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider hover:underline"
+                >
+                  {isAdminRegistering ? 'Voltar ao Login' : 'Cadastro Admin'}
+                </button>
+              </div>
+              
+              <form onSubmit={handleAdminAuth} className="space-y-4">
+                {isAdminRegistering && (
+                  <div className="space-y-1 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <input
+                      type="text"
+                      placeholder="Nome do Administrador"
+                      value={adminName}
+                      onChange={e => setAdminName(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-3.5 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all font-medium"
+                      required
+                    />
+                  </div>
+                )}
+                <div className="space-y-1">
+                  <input
+                    type="text"
+                    placeholder="Usuário (ex: admin)"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-3.5 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all font-medium"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <input
+                    type="password"
+                    placeholder="Senha"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-3.5 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all font-medium"
+                    required
+                  />
+                </div>
+                {error && <p className="text-red-500 dark:text-red-400 text-xs font-bold bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-100 dark:border-red-900/30">⚠️ {error}</p>}
+                <button
+                  type="submit"
+                  className="w-full bg-slate-900 dark:bg-indigo-600 text-white py-4 rounded-xl font-black hover:opacity-90 transition-all shadow-xl shadow-slate-200 dark:shadow-none transform active:scale-[0.98]"
+                >
+                  {isAdminRegistering ? 'Cadastrar Admin' : 'Entrar como Admin'}
+                </button>
+              </form>
+            </section>
+
+            <div className="relative py-4">
+              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100 dark:border-slate-800"></div></div>
+              <div className="relative flex justify-center"><span className="bg-white dark:bg-slate-900 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Acesso Rápido</span></div>
+            </div>
+
+            {/* Congregation Selection */}
+            <section>
+              <h3 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-6 flex items-center">
+                <span className="w-8 h-[1px] bg-slate-200 dark:bg-slate-800 mr-3"></span>
+                Selecione sua Congregação
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-56 overflow-y-auto pr-3 custom-scrollbar">
+                {congregations.map(cong => (
+                  <button
+                    key={cong.id}
+                    onClick={() => handleCongregationClick(cong)}
+                    className="group text-left p-4 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all flex flex-col justify-between"
+                  >
+                    <span className="font-bold text-slate-700 dark:text-slate-200 group-hover:text-indigo-700 dark:group-hover:text-indigo-400 transition-colors">{cong.name}</span>
+                    <span className="text-[9px] font-black uppercase text-slate-400 group-hover:text-indigo-400 dark:group-hover:text-indigo-500 mt-2">Acessar Painel →</span>
+                  </button>
+                ))}
+              </div>
+            </section>
           </div>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {isRegistering && (
-              <div className="flex gap-4 mb-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="role" checked={role === 'user'} onChange={() => setRole('user')} className="text-indigo-600 focus:ring-indigo-500" />
-                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Usuário</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="role" checked={role === 'admin'} onChange={() => setRole('admin')} className="text-indigo-600 focus:ring-indigo-500" />
-                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Administrador</span>
-                </label>
-              </div>
-            )}
-
-            {isRegistering && (
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Nome Completo</label>
-                <input
-                  required
-                  type="text"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
-                />
-              </div>
-            )}
-
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">E-mail</label>
-              <input
-                required
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Senha</label>
-              <input
-                required
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
-              />
-            </div>
-
-            {isRegistering && role === 'user' && (
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Código da Congregação</label>
-                <input
-                  required
-                  type="text"
-                  placeholder="Ex: 123456"
-                  value={accessCode}
-                  onChange={e => setAccessCode(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none font-medium tracking-widest"
-                />
-              </div>
-            )}
-
-            {error && (
-              <p className="text-red-500 dark:text-red-400 text-xs font-bold bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-100 dark:border-red-900/30">
-                ⚠️ {error}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black hover:opacity-90 transition-all shadow-xl shadow-indigo-200 dark:shadow-none transform active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Aguarde...' : (isRegistering ? 'Criar Conta' : 'Entrar')}
-            </button>
-          </form>
           
           <p className="mt-12 text-center text-[10px] font-bold text-slate-300 dark:text-slate-600 uppercase tracking-[0.2em]">JW Transportation Engine v2.0</p>
         </div>
       </div>
+
+      {/* Auth Modal */}
+      {showAuthModal && selectedCongregation && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-[200]">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-8 shadow-2xl border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-xl font-bold text-slate-800 dark:text-white">{selectedCongregation.name}</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
+                  {authStep === 'LOGIN_OR_REGISTER' ? (isRegistering ? 'Criar nova conta' : 'Acessar sua conta') : 
+                   authStep === 'CONFIRM_EMAIL' ? 'Confirmação de E-mail' : 'Código da Congregação'}
+                </p>
+              </div>
+              <button onClick={() => setShowAuthModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">✕</button>
+            </div>
+
+            <form onSubmit={handleAuthSubmit} className="space-y-5">
+              {authStep === 'LOGIN_OR_REGISTER' && (
+                <>
+                  <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-4">
+                    <button
+                      type="button"
+                      onClick={() => { setIsRegistering(true); setModalError(''); }}
+                      className={`flex-1 py-2 text-xs font-bold uppercase rounded-lg transition-all ${isRegistering ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500'}`}
+                    >
+                      Cadastrar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setIsRegistering(false); setModalError(''); }}
+                      className={`flex-1 py-2 text-xs font-bold uppercase rounded-lg transition-all ${!isRegistering ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500'}`}
+                    >
+                      Entrar
+                    </button>
+                  </div>
+
+                  {isRegistering && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Nome Completo</label>
+                      <input
+                        required
+                        type="text"
+                        value={formData.name}
+                        onChange={e => setFormData({ ...formData, name: e.target.value })}
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                      />
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">E-mail</label>
+                    <input
+                      required
+                      type="email"
+                      value={formData.email}
+                      onChange={e => setFormData({ ...formData, email: e.target.value })}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Senha</label>
+                    <input
+                      required
+                      type="password"
+                      value={formData.password}
+                      onChange={e => setFormData({ ...formData, password: e.target.value })}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                    />
+                  </div>
+                </>
+              )}
+
+              {authStep === 'CONFIRM_EMAIL' && (
+                <div className="text-center py-4">
+                  <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/20 rounded-full flex items-center justify-center text-3xl mx-auto mb-4">📧</div>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 mb-6">
+                    Enviamos um link de confirmação para <strong>{formData.email}</strong>.
+                    <br />
+                    Por favor, verifique sua caixa de entrada.
+                  </p>
+                  <p className="text-xs text-slate-400 mb-2">Para fins de teste, clique abaixo:</p>
+                  <button
+                    type="button"
+                    onClick={() => setAuthStep('ACCESS_CODE')}
+                    className="text-indigo-600 dark:text-indigo-400 font-bold text-sm hover:underline"
+                  >
+                    Simular Confirmação de E-mail
+                  </button>
+                </div>
+              )}
+
+              {authStep === 'ACCESS_CODE' && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/20 rounded-xl">
+                    <p className="text-sm text-amber-800 dark:text-amber-300">
+                      Para acessar a área desta congregação, você precisa do <strong>Código de Acesso</strong> fornecido pelo administrador.
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Código da Congregação</label>
+                    <input
+                      required
+                      type="text"
+                      placeholder="Ex: 123456"
+                      value={formData.accessCode}
+                      onChange={e => setFormData({ ...formData, accessCode: e.target.value })}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none font-medium text-center tracking-widest text-lg"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {modalError && (
+                <p className="text-red-500 dark:text-red-400 text-xs font-bold bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-100 dark:border-red-900/30 text-center">
+                  ⚠️ {modalError}
+                </p>
+              )}
+
+              {authStep !== 'CONFIRM_EMAIL' && (
+                <button
+                  type="submit"
+                  className="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold shadow-lg shadow-indigo-100 dark:shadow-none text-sm uppercase tracking-wide hover:bg-indigo-700 transition-all"
+                >
+                  {authStep === 'LOGIN_OR_REGISTER' ? (isRegistering ? 'Continuar' : 'Entrar') : 'Acessar Painel'}
+                </button>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

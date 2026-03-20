@@ -47,7 +47,11 @@ const Login: React.FC<LoginProps> = ({ isDarkMode, toggleTheme }) => {
         await authService.login(email, password);
       }
     } catch (err: any) {
-      setError(err.message || 'Ocorreu um erro.');
+      let msg = err.message || 'Ocorreu um erro.';
+      if (msg === 'Failed to fetch') {
+        msg = 'Erro de conexão: Não foi possível alcançar o servidor do Supabase. Verifique sua internet, desative o AdBlock ou veja se o projeto está ativo no painel do Supabase.';
+      }
+      setError(msg);
     } finally {
       setIsLoading(false);
     }

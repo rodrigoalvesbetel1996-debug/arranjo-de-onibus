@@ -42,6 +42,7 @@ const App: React.FC = () => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
 
   // Initial Data Loading
   useEffect(() => {
@@ -60,9 +61,9 @@ const App: React.FC = () => {
 
       setIsLoading(true);
       
-      // Cria um timer para desistir do Supabase se demorar mais de 5 segundos
+      // Cria um timer para desistir do Supabase se demorar mais de 3 segundos
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('TIMEOUT')), 5000)
+        setTimeout(() => reject(new Error('TIMEOUT')), 3000)
       );
 
       try {
@@ -74,6 +75,7 @@ const App: React.FC = () => {
               return data && data.length > 0 ? data : fallbackData;
             } catch (err) {
               console.warn(`Serviço ignorado (lento ou erro):`, err);
+              setIsOfflineMode(true);
               return fallbackData;
             }
           };
@@ -96,6 +98,7 @@ const App: React.FC = () => {
           setReports(r);
           setExpenses(exp);
         } else {
+          setIsOfflineMode(true);
           // Fallback to LocalStorage
           setUsers(storage.getUsers());
           setEvents(storage.getEvents());
@@ -107,6 +110,7 @@ const App: React.FC = () => {
         }
       } catch (error) {
         console.warn('Supabase not reachable or configured incorrectly. Falling back to LocalStorage.', error);
+        setIsOfflineMode(true);
         // Fallback on error
         setUsers(storage.getUsers());
         setEvents(storage.getEvents());
@@ -137,58 +141,58 @@ const App: React.FC = () => {
   useEffect(() => {
     if (isLoading) return;
     storage.saveEvents(events);
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured && !isOfflineMode) {
       events.forEach(e => supabaseService.saveEvent(e).catch(err => console.warn('Supabase save error:', err)));
     }
-  }, [events, isLoading]);
+  }, [events, isLoading, isOfflineMode]);
 
   useEffect(() => {
     if (isLoading) return;
     storage.savePassengers(passengers);
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured && !isOfflineMode) {
       supabaseService.savePassengers(passengers).catch(err => console.warn('Supabase save error:', err));
     }
-  }, [passengers, isLoading]);
+  }, [passengers, isLoading, isOfflineMode]);
 
   useEffect(() => {
     if (isLoading) return;
     storage.saveCongregations(congregations);
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured && !isOfflineMode) {
       congregations.forEach(c => supabaseService.saveCongregation(c).catch(err => console.warn('Supabase save error:', err)));
     }
-  }, [congregations, isLoading]);
+  }, [congregations, isLoading, isOfflineMode]);
 
   useEffect(() => {
     if (isLoading) return;
     storage.savePayments(payments);
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured && !isOfflineMode) {
       payments.forEach(p => supabaseService.savePayment(p).catch(err => console.warn('Supabase save error:', err)));
     }
-  }, [payments, isLoading]);
+  }, [payments, isLoading, isOfflineMode]);
 
   useEffect(() => {
     if (isLoading) return;
     storage.saveReports(reports);
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured && !isOfflineMode) {
       reports.forEach(r => supabaseService.saveReport(r).catch(err => console.warn('Supabase save error:', err)));
     }
-  }, [reports, isLoading]);
+  }, [reports, isLoading, isOfflineMode]);
 
   useEffect(() => {
     if (isLoading) return;
     storage.saveExpenses(expenses);
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured && !isOfflineMode) {
       expenses.forEach(e => supabaseService.saveExpense(e).catch(err => console.warn('Supabase save error:', err)));
     }
-  }, [expenses, isLoading]);
+  }, [expenses, isLoading, isOfflineMode]);
 
   useEffect(() => {
     if (isLoading) return;
     storage.saveUsers(users);
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured && !isOfflineMode) {
       users.forEach(u => supabaseService.saveUser(u).catch(err => console.warn('Supabase save error:', err)));
     }
-  }, [users, isLoading]);
+  }, [users, isLoading, isOfflineMode]);
 
   const addPassengerGroup = (group: Partial<Passenger>[], existingGroupId?: string) => {
     const groupId = existingGroupId || `group-${Date.now()}`;
@@ -349,8 +353,14 @@ const App: React.FC = () => {
   } as User : null;
 
   return (
-    <Routes>
-      <Route path="/login" element={
+    <div className="relative">
+      {isOfflineMode && (
+        <div className="bg-amber-500 text-white text-[10px] font-bold uppercase tracking-widest py-1 px-4 text-center sticky top-0 z-[100] shadow-md">
+          ⚠️ Modo Offline: O banco de dados está inacessível. As alterações serão salvas apenas neste navegador.
+        </div>
+      )}
+      <Routes>
+        <Route path="/login" element={
         session ? (
           <Navigate to={profile?.role === 'admin' ? '/admin' : '/dashboard'} replace />
         ) : (
@@ -480,6 +490,7 @@ const App: React.FC = () => {
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
+    </div>
   );
 };
 

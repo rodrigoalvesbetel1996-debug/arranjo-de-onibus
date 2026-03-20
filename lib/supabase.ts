@@ -18,6 +18,19 @@ export const isSupabaseConfigured = !!(
   !supabaseUrl.includes('placeholder')
 );
 
+export const checkSupabaseConnection = async () => {
+  if (!isSupabaseConfigured) return { ok: false, message: 'Supabase não configurado' };
+  
+  try {
+    const { error } = await supabase.from('profiles').select('id', { count: 'exact', head: true }).limit(1);
+    if (error) throw error;
+    return { ok: true };
+  } catch (err: any) {
+    console.error('Erro de conexão Supabase:', err);
+    return { ok: false, message: err.message };
+  }
+};
+
 if (!isSupabaseConfigured && typeof window !== 'undefined') {
   console.warn('⚠️ Supabase não está configurado corretamente. Verifique as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.');
 }
